@@ -1,0 +1,7 @@
+[package]
+name = "windowmaker"
+version = "0.1.0"
+authors = ["iancormac84 <wilnathan@gmail.com>"]
+
+[dependencies.winapi]
+path = "E:/Devel/resources/winapi-rs"
