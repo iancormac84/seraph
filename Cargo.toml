@@ -3,5 +3,14 @@ name = "windowmaker"
 version = "0.1.0"
 authors = ["iancormac84 <wilnathan@gmail.com>"]
 
+[dependencies.dwmapi-sys]
+path = "E:/Devel/resources/winapi-rs/lib/dwmapi"
+
+[dependencies.gdi32-sys]
+path = "E:/Devel/resources/winapi-rs/lib/gdi32"
+
+[dependencies.user32-sys]
+path = "E:/Devel/resources/winapi-rs/lib/user32"
+
 [dependencies.winapi]
 path = "E:/Devel/resources/winapi-rs"
