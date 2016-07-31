@@ -1,1 +1,2 @@
 6f3efa509329076debb2b3cb4e5177afafc61a22: First commit. Going to try to implement Unreal Engine 4's windowing systems. Of course, this wouldn't be a good idea to use in code in my game engine, but this is for testing purposes.
+0dd2d546b17e026f7280c3c3327e5be2e9820d65: Implemented a lot of the Unreal Engine 4 FWindowsWindow API. I have to decide whether to make some of the methods be part of a trait so that I can implement them for other platform specific data structures. It compiles successfully, by the way.

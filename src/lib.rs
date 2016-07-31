@@ -4,11 +4,11 @@ extern crate user32;
 extern crate winapi;
 
 use std::{cmp, io, mem, ptr};
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 use winapi::{
-	FALSE, GWL_EXSTYLE, GWL_STYLE, HRGN, HWND, HWND_TOP, HWND_TOPMOST, LWA_ALPHA, MARGINS, MONITORINFO, MONITOR_DEFAULTTOPRIMARY, MONITOR_DEFAULTTONEAREST, RECT, SM_CYCAPTION, SW_HIDE,
-	SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, SW_SHOW, SW_SHOWNA, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOREDRAW, SWP_NOSENDCHANGING, SWP_NOSIZE, SWP_NOZORDER,
-	WINDOWINFO, WINDOWPLACEMENT, WS_BORDER, WS_CAPTION, WS_EX_COMPOSITED, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_OVERLAPPED, WS_POPUP, WS_SYSMENU, WS_THICKFRAME
+	DWORD, FALSE, GWL_EXSTYLE, GWL_STYLE, HINSTANCE, HRGN, HWND, HWND_TOP, HWND_TOPMOST, LPARAM, LWA_ALPHA, MARGINS, MONITORINFO, MONITOR_DEFAULTTOPRIMARY, MONITOR_DEFAULTTONEAREST, POINTL,
+	RECT, SM_CYCAPTION, SW_HIDE, SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, SW_SHOW, SW_SHOWNA, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOREDRAW, SWP_NOSENDCHANGING,
+	SWP_NOSIZE, SWP_NOZORDER, WINDOWINFO, WINDOWPLACEMENT, WPARAM, WS_BORDER, WS_CAPTION, WS_EX_COMPOSITED, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_OVERLAPPED, WS_POPUP, WS_SYSMENU, WS_THICKFRAME
 };
 
 pub enum WindowType {
@@ -114,7 +114,7 @@ struct WindowDefinition {
 	size_limits: WindowSizeLimits,
 }
 
-pub struct Window {
+pub struct WindowsWindow {
 	app_window_class: &'static str,
 	hwnd: HWND,
 	region_height: i32,
@@ -130,14 +130,14 @@ pub struct Window {
     window_definitions: Rc<WindowDefinition>,
 }
 
-impl Window {
-	pub fn new() -> Window {
+impl WindowsWindow {
+	pub fn new() -> WindowsWindow {
 		unsafe {
 		    let mut wnd_plcment: WINDOWPLACEMENT = mem::zeroed();
 		    let mut wnd_plcment1: WINDOWPLACEMENT = mem::zeroed();
 		    wnd_plcment.length = mem::size_of::<WINDOWPLACEMENT>() as u32;
 		    wnd_plcment1.length = mem::size_of::<WINDOWPLACEMENT>() as u32;
-		    Window {
+		    WindowsWindow {
 			    app_window_class: "CormacWindow",
 		        hwnd: ptr::null_mut(),
                 region_height: mem::uninitialized(),
@@ -581,4 +581,119 @@ impl Window {
             };
 		}
 	}
+}
+
+pub struct DeferredWindowsMessage {
+	native_window: Weak<WindowsWindow>,
+	hwnd: HWND,
+	message: u32,
+	wparam: WPARAM,
+	lparam: LPARAM,
+	mouse_coord_x: i32,
+	mouse_coord_y: i32,
+	raw_input_flags: u32,
+}
+
+impl DeferredWindowsMessage {
+	pub fn new(
+		native_window: &Rc<WindowsWindow>,
+		hwnd: HWND,
+		message: u32,
+		wparam: WPARAM,
+		lparam: LPARAM,
+		x: i32,
+		y: i32,
+		raw_input_flags: u32) -> DeferredWindowsMessage {
+		DeferredWindowsMessage {
+            native_window: Rc::downgrade(native_window),
+            hwnd: hwnd,
+            message: message,
+            wparam: wparam,
+            lparam: lparam,
+            mouse_coord_x: x,
+            mouse_coord_y: y,
+            raw_input_flags: raw_input_flags,
+		}
+	}
+}
+
+pub enum WindowsDragDropOperationType {
+	DragEnter,
+	DragOver,
+	DragLeave,
+	Drop
+}
+
+pub enum WindowsOLEDataType {
+	None  = 0,
+	Text  = 1 << 0,
+	Files = 1 << 1,
+}
+
+pub enum ModifierKey {
+	LeftShift,		// VK_LSHIFT
+	RightShift,		// VK_RSHIFT
+	LeftControl,	// VK_LCONTROL
+	RightControl,	// VK_RCONTROL
+	LeftAlt,		// VK_LMENU
+	RightAlt,		// VK_RMENU
+	CapsLock,		// VK_CAPITAL
+}
+
+pub struct DragDropOLEData {
+	operation_text: String,
+	operation_filenames: Vec<String>,
+	data_type: u8,
+}
+
+pub struct DeferredWindowsDragDropOperation {
+	operation_type: WindowsDragDropOperationType,
+	hwnd: HWND,
+	ole_data: DragDropOLEData,
+	key_state: DWORD,
+	cursor_position: POINTL,
+}
+
+struct PlatformRect {
+	left: i32,
+	top: i32,
+	right: i32,
+	bottom: i32,
+}
+
+struct MonitorInfo {
+	name: String,
+	id: String,
+	native_width: i32,
+	native_height: i32,
+	is_primary: bool,
+}
+
+pub struct DisplayMetrics {
+	primary_display_width: i32,
+	primary_display_height: i32,
+	monitor_info: Vec<MonitorInfo>,
+	primary_display_work_area_rect: PlatformRect,
+	virtual_display_rect: PlatformRect,
+	//TODO: The following should be a Vector2D
+	title_safe_padding_size: (i32, i32),
+	//TODO: The following should be a Vector2D
+	action_safe_padding_size: (i32, i32),
+
+}
+
+pub trait IWindowsMessageHandler {
+	fn process_message(&mut self, msg: u32, wparam: WPARAM, lparam: LPARAM, out_result: &mut i32) -> bool;
+}
+
+pub struct WindowsApplication {
+	minimized_window_position: (i32, i32),
+	instance_handle: HINSTANCE,
+    using_high_precision_mouse_input: bool,
+    is_mouse_attached: bool,
+    force_activate_by_mouse: bool,
+    deferred_messages: Vec<DeferredWindowsMessage>,
+    deferred_drag_drop_operations: Vec<DeferredWindowsDragDropOperation>,
+    message_handlers: Vec<Box<IWindowsMessageHandler>>,
+    windows: Vec<Rc<WindowsWindow>>,
 }
