@@ -9,8 +9,17 @@ path = "E:/Devel/resources/winapi-rs/lib/dwmapi"
 [dependencies.gdi32-sys]
 path = "E:/Devel/resources/winapi-rs/lib/gdi32"
 
+[dependencies.ole32-sys]
+path = "E:/Devel/resources/winapi-rs/lib/ole32"
+
 [dependencies.user32-sys]
 path = "E:/Devel/resources/winapi-rs/lib/user32"
 
+[dependencies.uuid-sys]
+path = "E:/Devel/resources/winapi-rs/lib/uuid"
+
 [dependencies.winapi]
 path = "E:/Devel/resources/winapi-rs"
+
+[dependencies]
+bitflags = "*"
