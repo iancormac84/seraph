@@ -278,8 +278,7 @@ impl WindowsWindow {
 		let region = self.make_window_region_object();
 		unsafe {
 			if user32::SetWindowRgn(self.hwnd, region, FALSE) == 0 {
-				let err = io::Error::last_os_error();
-            	println!("Warning: {}", err);
+            	println!("Warning: {}", io::Error::last_os_error());
 			} 
 		}
 	}
@@ -312,8 +311,7 @@ impl WindowsWindow {
 
             	let res = unsafe { dwmapi::DwmExtendFrameIntoClientArea(self.hwnd, &margins) };
             	if res != 0 {
-            		let err = io::Error::last_os_error();
-            	    println!("Warning: {}", err);
+            	    println!("Warning: {}", io::Error::last_os_error());
             	}
             } else {
             	unsafe {
