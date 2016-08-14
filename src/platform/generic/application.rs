@@ -42,18 +42,6 @@ pub struct MonitorInfo {
 	is_primary: bool,
 }
 
-pub struct DisplayMetrics {
-	primary_display_width: i32,
-	primary_display_height: i32,
-	monitor_info: Vec<MonitorInfo>,
-	primary_display_work_area_rect: PlatformRect,
-	virtual_display_rect: PlatformRect,
-	//TODO: The following should be a Vector2D
-	title_safe_padding_size: (i32, i32),
-	//TODO: The following should be a Vector2D
-	action_safe_padding_size: (i32, i32),
-}
-
 pub enum WindowTitleAlignment {
 	Left,
 	Center,

@@ -1,3 +1,4 @@
+use platform::generic::window_definition::WindowDefinition;
 use std::os::raw::c_void;
 
 #[derive(PartialEq, Copy, Clone)]
@@ -37,6 +38,6 @@ pub trait GenericWindow {
 	fn get_os_window_handle(&self) -> *const c_void;
 	fn is_foreground_window(&self) -> bool;
     fn set_text(&self, text: Vec<u16>);
-    //virtual const FGenericWindowDefinition& GetDefinition() const;
+    fn get_definition(&self) -> WindowDefinition;
     fn adjust_cached_size(&self, size: &mut (i32, i32));
 }

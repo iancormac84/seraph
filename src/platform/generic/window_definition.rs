@@ -11,7 +11,9 @@ pub enum WindowType {
 	/** Value indicating that this is a window used for a notification toast */
 	Notification,
 	/** Value indicating that this is a window used for a cursor decorator */
-	CursorDecorator
+	CursorDecorator,
+	/** Value indicating that this is a game window */
+	GameWindow,
 }
 
 #[derive(PartialEq, Clone)]

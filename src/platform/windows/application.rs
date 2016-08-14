@@ -1,70 +1,69 @@
 use dwmapi;
 use platform::generic::application::PlatformRect;
 use platform::generic::window::GenericWindow;
-use platform::generic::window_definition::WindowTransparency;
+use platform::generic::window_definition::{WindowDefinition, WindowTransparency, WindowType};
 use platform::windows::window::WindowsWindow;
 use std::collections::BTreeMap;
 use std::{mem, ptr};
 use std::rc::{Rc, Weak};
 use user32;
 use winapi::{
-    CS_DBLCLKS, DWORD, FALSE, HICON, HINSTANCE, HIWORD, HMONITOR, HWND, LPARAM, MONITORINFO, MONITOR_DEFAULTTONEAREST, POINT, POINTL, RAWINPUTDEVICE, RECT, RIDEV_REMOVE, VK_SPACE, WNDCLASS,
-    WPARAM
+    CS_DBLCLKS, DLGC_WANTALLKEYS, DWORD, FALSE, GWL_STYLE, GWL_EXSTYLE, HICON, HINSTANCE, HIWORD, HMONITOR, HWND, HRAWINPUT, IMN_CHANGECANDIDATE, IMN_CLOSECANDIDATE, IMN_CLOSESTATUSWINDOW,
+    IMN_GUIDELINE, IMN_OPENCANDIDATE, IMN_OPENSTATUSWINDOW, IMN_PRIVATE, IMN_SETCANDIDATEPOS, IMN_SETCOMPOSITIONFONT, IMN_SETCOMPOSITIONWINDOW, IMN_SETCONVERSIONMODE, IMN_SETOPENSTATUS,
+    IMN_SETSENTENCEMODE, IMN_SETSTATUSWINDOWPOS, IMR_CANDIDATEWINDOW, IMR_COMPOSITIONFONT, IMR_COMPOSITIONWINDOW, IMR_CONFIRMRECONVERTSTRING, IMR_DOCUMENTFEED, IMR_QUERYCHARPOSITION,
+    IMR_RECONVERTSTRING, LPARAM, LPNCCALCSIZE_PARAMS, MINMAXINFO, MONITORINFO, MONITOR_DEFAULTTONEAREST, NCCALCSIZE_PARAMS, POINT, POINTL, RAWINPUTDEVICE, RAWINPUTHEADER, RECT, RIDEV_REMOVE,
+    RID_INPUT, SM_CXSCREEN, SM_CYSCREEN, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SPI_GETWORKAREA, SW_RESTORE, TRUE, VK_SPACE, WINDOWINFO, WM_IME_CHAR,
+    WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION, WM_IME_NOTIFY, WM_IME_REQUEST, WM_IME_SETCONTEXT, WM_IME_STARTCOMPOSITION, WM_INPUTLANGCHANGE, WM_INPUTLANGCHANGEREQUEST, WM_KEYDOWN, WM_KEYUP,
+    WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDBLCLK, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCLBUTTONDOWN, WM_NCMBUTTONDOWN, WM_NCMOUSEMOVE,
+    WM_NCRBUTTONDOWN, WM_RBUTTONDBLCLK, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SYSKEYUP, WM_XBUTTONDBLCLK, WM_XBUTTONDOWN, WM_XBUTTONUP, WNDCLASSW, WPARAM
 };
 
-static BTreeMap<u32, &'static str> WindowsMessageStrings = []()
-        {
-            TMap<uint32, FString> Result;
-#define ADD_WINDOWS_MESSAGE_STRING(WMCode) Result.Add(WMCode, TEXT(#WMCode))
-            ADD_WINDOWS_MESSAGE_STRING(WM_INPUTLANGCHANGEREQUEST);
-            ADD_WINDOWS_MESSAGE_STRING(WM_INPUTLANGCHANGE);
-            ADD_WINDOWS_MESSAGE_STRING(WM_IME_SETCONTEXT);
-            ADD_WINDOWS_MESSAGE_STRING(WM_IME_NOTIFY);
-            ADD_WINDOWS_MESSAGE_STRING(WM_IME_REQUEST);
-            ADD_WINDOWS_MESSAGE_STRING(WM_IME_STARTCOMPOSITION);
-            ADD_WINDOWS_MESSAGE_STRING(WM_IME_COMPOSITION);
-            ADD_WINDOWS_MESSAGE_STRING(WM_IME_ENDCOMPOSITION);
-            ADD_WINDOWS_MESSAGE_STRING(WM_IME_CHAR);
-#undef ADD_WINDOWS_MESSAGE_STRING
-            return Result;
-        }();
+lazy_static! {
+    static ref WINDOWS_MESSAGE_STRINGS: BTreeMap<u32, &'static str> = {
+        let mut result: BTreeMap<u32, &'static str> = BTreeMap::new();
+        result.insert(WM_INPUTLANGCHANGEREQUEST, "WM_INPUTLANGCHANGEREQUEST");
+        result.insert(WM_INPUTLANGCHANGE, "WM_INPUTLANGCHANGE");
+        result.insert(WM_IME_SETCONTEXT, "WM_IME_SETCONTEXT");
+        result.insert(WM_IME_NOTIFY, "WM_IME_NOTIFY");
+        result.insert(WM_IME_REQUEST, "WM_IME_REQUEST");
+        result.insert(WM_IME_STARTCOMPOSITION, "WM_IME_STARTCOMPOSITION");
+        result.insert(WM_IME_COMPOSITION, "WM_IME_COMPOSITION");
+        result.insert(WM_IME_ENDCOMPOSITION, "WM_IME_ENDCOMPOSITION");
+        result.insert(WM_IME_CHAR, "WM_IME_CHAR");
+        result
+    };
 
-        static const TMap<uint32, FString> IMNStrings = []()
-        {
-            TMap<uint32, FString> Result;
-#define ADD_IMN_STRING(IMNCode) Result.Add(IMNCode, TEXT(#IMNCode))
-            ADD_IMN_STRING(IMN_CLOSESTATUSWINDOW);
-            ADD_IMN_STRING(IMN_OPENSTATUSWINDOW);
-            ADD_IMN_STRING(IMN_CHANGECANDIDATE);
-            ADD_IMN_STRING(IMN_CLOSECANDIDATE);
-            ADD_IMN_STRING(IMN_OPENCANDIDATE);
-            ADD_IMN_STRING(IMN_SETCONVERSIONMODE);
-            ADD_IMN_STRING(IMN_SETSENTENCEMODE);
-            ADD_IMN_STRING(IMN_SETOPENSTATUS);
-            ADD_IMN_STRING(IMN_SETCANDIDATEPOS);
-            ADD_IMN_STRING(IMN_SETCOMPOSITIONFONT);
-            ADD_IMN_STRING(IMN_SETCOMPOSITIONWINDOW);
-            ADD_IMN_STRING(IMN_SETSTATUSWINDOWPOS);
-            ADD_IMN_STRING(IMN_GUIDELINE);
-            ADD_IMN_STRING(IMN_PRIVATE);
-#undef ADD_IMN_STRING
-            return Result;
-        }();
+    static ref IMN_STRINGS: BTreeMap<u32, &'static str> = {
+        let mut result: BTreeMap<u32, &'static str> = BTreeMap::new();
+        result.insert(IMN_CLOSESTATUSWINDOW, "IMN_CLOSESTATUSWINDOW");
+        result.insert(IMN_OPENSTATUSWINDOW, "IMN_OPENSTATUSWINDOW");
+        result.insert(IMN_CHANGECANDIDATE, "IMN_CHANGECANDIDATE");
+        result.insert(IMN_CLOSECANDIDATE, "IMN_CLOSECANDIDATE");
+        result.insert(IMN_OPENCANDIDATE, "IMN_OPENCANDIDATE");
+        result.insert(IMN_SETCONVERSIONMODE, "IMN_SETCONVERSIONMODE");
+        result.insert(IMN_SETSENTENCEMODE, "IMN_SETSENTENCEMODE");
+        result.insert(IMN_SETOPENSTATUS, "IMN_SETOPENSTATUS");
+        result.insert(IMN_SETCANDIDATEPOS, "IMN_SETCANDIDATEPOS");
+        result.insert(IMN_SETCOMPOSITIONFONT, "IMN_SETCOMPOSITIONFONT");
+        result.insert(IMN_SETCOMPOSITIONWINDOW, "IMN_SETCOMPOSITIONWINDOW");
+        result.insert(IMN_SETSTATUSWINDOWPOS, "IMN_SETSTATUSWINDOWPOS");
+        result.insert(IMN_GUIDELINE, "IMN_GUIDELINE");
+        result.insert(IMN_PRIVATE, "IMN_PRIVATE");
+        result
+    };
 
-        static const TMap<uint32, FString> IMRStrings = []()
-        {
-            TMap<uint32, FString> Result;
-#define ADD_IMR_STRING(IMRCode) Result.Add(IMRCode, TEXT(#IMRCode))
-    ADD_IMR_STRING(IMR_CANDIDATEWINDOW);
-    ADD_IMR_STRING(IMR_COMPOSITIONFONT);
-    ADD_IMR_STRING(IMR_COMPOSITIONWINDOW);
-    ADD_IMR_STRING(IMR_CONFIRMRECONVERTSTRING);
-    ADD_IMR_STRING(IMR_DOCUMENTFEED);
-    ADD_IMR_STRING(IMR_QUERYCHARPOSITION);
-    ADD_IMR_STRING(IMR_RECONVERTSTRING);
-#undef ADD_IMR_STRING
-            return Result;
-        }();
+    static ref IMR_STRINGS: BTreeMap<u32, &'static str> = {
+        let mut result: BTreeMap<u32, &'static str> = BTreeMap::new();
+        result.insert(IMR_CANDIDATEWINDOW, "IMR_CANDIDATEWINDOW");
+        result.insert(IMR_COMPOSITIONFONT, "IMR_COMPOSITIONFONT");
+        result.insert(IMR_COMPOSITIONWINDOW, "IMR_COMPOSITIONWINDOW");
+        result.insert(IMR_CONFIRMRECONVERTSTRING, "IMR_CONFIRMRECONVERTSTRING");
+        result.insert(IMR_DOCUMENTFEED, "IMR_DOCUMENTFEED");
+        result.insert(IMR_QUERYCHARPOSITION, "IMR_QUERYCHARPOSITION");
+        result.insert(IMR_RECONVERTSTRING, "IMR_RECONVERTSTRING");
+        result
+    };
+}
 
 pub enum TaskbarProgressState {
     //Stops displaying progress and returns the button to its normal state.
@@ -193,7 +192,7 @@ pub struct WindowsApplication {
 impl WindowsApplication {
     pub fn register_class(&self, hinstance: HINSTANCE, hicon: HICON) -> bool {
         unsafe {
-            let mut wc: WNDCLASS = mem::zeroed();
+            let mut wc: WNDCLASSW = mem::zeroed();
             wc.style = CS_DBLCLKS; // We want to receive double clicks
             wc.lpfnWndProc = AppWndProc;
             wc.cbClsExtra = 0;
@@ -297,7 +296,7 @@ impl WindowsApplication {
         }
     }
     pub fn process_message(&self, hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> i32 {
-        let mut current_native_event_window_opt = self.find_window_by_hwnd(self.windows, hwnd);
+        let mut current_native_event_window_opt = self.find_window_by_hwnd(&self.windows, hwnd);
 
         if self.windows.len() != 0 && current_native_event_window_opt.is_some() {
             let mut current_native_event_window = current_native_event_window_opt.unwrap();
@@ -372,7 +371,7 @@ impl WindowsApplication {
                     // If we're rendering our own window border, we'll "handle" this event so that Windows doesn't try to manage the cursor
                     // appearance for us in the non-client area.  However, for OS window borders we need to fall through to DefWindowProc to
                     // allow Windows to draw the resize cursor
-                    if !current_native_event_window->GetDefinition().has_os_window_border {
+                    if !current_native_event_window.get_definition().has_os_window_border {
                         // Handled
                         return 0;
                     }
@@ -381,12 +380,12 @@ impl WindowsApplication {
                 WM_INPUT => {
                     let mut size: u32 = 0;
                     unsafe {
-                        user32::GetRawInputData(lparam as HRAWINPUT, RID_INPUT, ptr::null(), &size, mem::size_of::<RAWINPUTHEADER>());
+                        user32::GetRawInputData(lparam as HRAWINPUT, RID_INPUT, ptr::null_mut(), &mut size, mem::size_of::<RAWINPUTHEADER>() as u32);
                     }
 
                     TScopedPointer<uint8> RawData(new uint8[Size]);
 
-                    if user32::GetRawInputData(lparam as HRAWINPUT, RID_INPUT, RawData.GetOwnedPointer(), &size, mem::size_of::<RAWINPUTHEADER>()) == size {
+                    if user32::GetRawInputData(lparam as HRAWINPUT, RID_INPUT, RawData.GetOwnedPointer(), &size, mem::size_of::<RAWINPUTHEADER>() as u32) == size {
                         const RAWINPUT* const Raw = (const RAWINPUT* const)RawData.GetOwnedPointer();
 
                         if (Raw->header.dwType == RIM_TYPEMOUSE) {
@@ -409,45 +408,47 @@ impl WindowsApplication {
                 },
                 WM_NCCALCSIZE => {
                     // Let windows absorb this message if using the standard border
-                    if wparam != 0 && !current_native_event_window->GetDefinition().has_os_window_border {
+                    if wparam != 0 && !current_native_event_window.get_definition().has_os_window_border {
                         // Borderless game windows are not actually borderless, they have a thick border that we simply draw game content over (client
                         // rect contains the window border). When maximized Windows will bleed our border over the edges of the monitor. So that we
                         // don't draw content we are going to later discard, we change a maximized window's size and position so that the entire
                         // window rect (including the border) sits inside the monitor. The size adjustments here will be sent to WM_MOVE and
                         // WM_SIZE and the window will still be considered maximized.
-                        if current_native_event_window->GetDefinition().Type == WindowType::GameWindow && current_native_event_window->is_maximized() {
+                        if current_native_event_window.get_definition().window_type == WindowType::GameWindow && current_native_event_window.is_maximized() {
                             // Ask the system for the window border size as this is the amount that Windows will bleed our window over the edge
                             // of our desired space. The value returned by current_native_event_window will be incorrect for our usage here as it
                             // refers to the border of the window that Slate should consider.
-                            WINDOWINFO WindowInfo;
-                            FMemory::Memzero(WindowInfo);
-                            WindowInfo.cbSize = sizeof(WindowInfo);
-                            ::GetWindowInfo(hwnd, &WindowInfo);
+                            let mut window_info: WINDOWINFO = mem::zeroed();
+                            window_info.cbSize = mem::size_of::<WINDOWINFO>() as u32;
+                            user32::GetWindowInfo(hwnd, &mut window_info);
 
                             // A pointer to the window size data that Windows will use is passed to us in lparam
-                            LPNCCALCSIZE_PARAMS ResizingRects = (LPNCCALCSIZE_PARAMS)lparam;
+                            let mut resizing_rects: NCCALCSIZE_PARAMS = unsafe {
+                                let calcparams = mem::transmute::<LPARAM, LPNCCALCSIZE_PARAMS>(lparam);
+                                *calcparams
+                            };
                             // The first rectangle contains the client rectangle of the resized window. Decrease window size on all sides by
                             // the border size.
-                            ResizingRects->rgrc[0].left += WindowInfo.cxWindowBorders;
-                            ResizingRects->rgrc[0].top += WindowInfo.cxWindowBorders;
-                            ResizingRects->rgrc[0].right -= WindowInfo.cxWindowBorders;
-                            ResizingRects->rgrc[0].bottom -= WindowInfo.cxWindowBorders;
+                            resizing_rects.rgrc[0].left += window_info.cxWindowBorders as i32;
+                            resizing_rects.rgrc[0].top += window_info.cxWindowBorders as i32;
+                            resizing_rects.rgrc[0].right -= window_info.cxWindowBorders as i32;
+                            resizing_rects.rgrc[0].bottom -= window_info.cxWindowBorders as i32;
                             // The second rectangle contains the destination rectangle for the content currently displayed in the window's
                             // client rect. Windows will blit the previous client content into this new location to simulate the move of
                             // the window until the window can repaint itself. This should also be adjusted to our new window size.
-                            ResizingRects->rgrc[1].left = ResizingRects->rgrc[0].left;
-                            ResizingRects->rgrc[1].top = ResizingRects->rgrc[0].top;
-                            ResizingRects->rgrc[1].right = ResizingRects->rgrc[0].right;
-                            ResizingRects->rgrc[1].bottom = ResizingRects->rgrc[0].bottom;
+                            resizing_rects.rgrc[1].left = resizing_rects.rgrc[0].left;
+                            resizing_rects.rgrc[1].top = resizing_rects.rgrc[0].top;
+                            resizing_rects.rgrc[1].right = resizing_rects.rgrc[0].right;
+                            resizing_rects.rgrc[1].bottom = resizing_rects.rgrc[0].bottom;
                             // A third rectangle is passed in that contains the source rectangle (client area from window pre-maximize).
                             // It's value should not be changed.
 
                             // The new window position. Pull in the window on all sides by the width of the window border so that the
                             // window fits entirely on screen. We'll draw over these borders with game content.
-                            ResizingRects->lppos->x += WindowInfo.cxWindowBorders;
-                            ResizingRects->lppos->y += WindowInfo.cxWindowBorders;
-                            ResizingRects->lppos->cx -= 2 * WindowInfo.cxWindowBorders;
-                            ResizingRects->lppos->cy -= 2 * WindowInfo.cxWindowBorders;
+                            (&*resizing_rects.lppos).x += window_info.cxWindowBorders as i32;
+                            (&*resizing_rects.lppos).y += window_info.cxWindowBorders as i32;
+                            (&*resizing_rects.lppos).cx -= 2 * window_info.cxWindowBorders as i32;
+                            (&*resizing_rects.lppos).cy -= 2 * window_info.cxWindowBorders as i32;
 
                             // Informs Windows to use the values as we altered them.
                             return WVR_VALIDRECTS;
@@ -468,64 +469,66 @@ impl WindowsApplication {
                 WM_SIZING => {
                     self.defer_message(current_native_event_window, hwnd, msg, wparam, lparam, 0, 0);
         
-                    if (current_native_event_window->GetDefinition().ShouldPreserveAspectRatio) {
+                    if current_native_event_window.get_definition().should_preserve_aspect_ratio {
                         // The rect we get in lparam is window rect, but we need to preserve client's aspect ratio,
                         // so we need to find what the border and title bar sizes are, if window has them and adjust the rect.
-                        WINDOWINFO WindowInfo;
-                        FMemory::Memzero(WindowInfo);
-                        WindowInfo.cbSize = sizeof(WindowInfo);
-                        ::GetWindowInfo(hwnd, &WindowInfo);
+                        let mut window_info: WINDOWINFO = mem::zeroed();
+                        window_info.cbSize = mem::size_of::<WINDOWINFO>() as u32;
+                        user32::GetWindowInfo(hwnd, &mut window_info);
 
-                        RECT TestRect;
-                        TestRect.left = TestRect.right = TestRect.top = TestRect.bottom = 0;
-                        AdjustWindowRectEx(&TestRect, WindowInfo.dwStyle, false, WindowInfo.dwExStyle);
+                        let mut test_rect: RECT = mem::zeroed();
+                        user32::AdjustWindowRectEx(&mut test_rect, window_info.dwStyle, FALSE, window_info.dwExStyle);
 
-                        RECT* Rect = (RECT*)lparam;
-                        Rect->left -= TestRect.left;
-                        Rect->right -= TestRect.right;
-                        Rect->top -= TestRect.top;
-                        Rect->bottom -= TestRect.bottom;
+                        let rect: RECT = unsafe {
+                            let lprect = mem::transmute::<LPARAM, *const RECT>(lparam);
+                            *lprect
+                        };
+
+                        rect.left -= test_rect.left;
+                        rect.right -= test_rect.right;
+                        rect.top -= test_rect.top;
+                        rect.bottom -= test_rect.bottom;
 
                         const float AspectRatio = current_native_event_window->GetAspectRatio();
-                        int32 NewWidth = Rect->right - Rect->left;
-                        int32 NewHeight = Rect->bottom - Rect->top;
+                        int32 NewWidth = rect.right - rect.left;
+                        int32 NewHeight = rect.bottom - rect.top;
 
                         match wparam {
                             WMSZ_LEFT | WMSZ_RIGHT => {
                                 int32 AdjustedHeight = NewWidth / AspectRatio;
-                                Rect->top -= (AdjustedHeight - NewHeight) / 2;
-                                Rect->bottom += (AdjustedHeight - NewHeight) / 2;
+                                rect.top -= (AdjustedHeight - NewHeight) / 2;
+                                rect.bottom += (AdjustedHeight - NewHeight) / 2;
                                 //break;
                             },
                             WMSZ_TOP | WMSZ_BOTTOM => {
                                 int32 AdjustedWidth = NewHeight * AspectRatio;
-                                Rect->left -= (AdjustedWidth - NewWidth) / 2;
-                                Rect->right += (AdjustedWidth - NewWidth) / 2;
+                                rect.left -= (AdjustedWidth - NewWidth) / 2;
+                                rect.right += (AdjustedWidth - NewWidth) / 2;
                                 //break;
                             },
                             WMSZ_TOPLEFT => {
                                 int32 AdjustedHeight = NewWidth / AspectRatio;
-                                Rect->top -= AdjustedHeight - NewHeight;
+                                rect.top -= AdjustedHeight - NewHeight;
                                 //break;
                             },
                             WMSZ_TOPRIGHT => {
                                 int32 AdjustedHeight = NewWidth / AspectRatio;
-                                Rect->top -= AdjustedHeight - NewHeight;
+                                rect.top -= AdjustedHeight - NewHeight;
                                 //break;
                             },
                             WMSZ_BOTTOMLEFT => {
                                 int32 AdjustedHeight = NewWidth / AspectRatio;
-                                Rect->bottom += AdjustedHeight - NewHeight;
+                                rect.bottom += AdjustedHeight - NewHeight;
                                 //break;
                             },
                             WMSZ_BOTTOMRIGHT => {
                                 int32 AdjustedHeight = NewWidth / AspectRatio;
-                                Rect->bottom += AdjustedHeight - NewHeight;
+                                rect.bottom += AdjustedHeight - NewHeight;
                                 //break;
                             }
                         }
 
-                        user32::AdjustWindowRectEx(Rect, WindowInfo.dwStyle, false, WindowInfo.dwExStyle);
+                        user32::AdjustWindowRectEx(Rect, window_info.dwStyle, false, window_info.dwExStyle);
 
                         return TRUE;
                     }
@@ -557,9 +560,9 @@ impl WindowsApplication {
                 //break;
                 WM_NCHITTEST => {
                     // Only needed if not using the os window border as this is determined automatically
-                    if !current_native_event_window->GetDefinition().has_os_window_border {
-                        RECT rcWindow;
-                        user32::GetWindowRect(hwnd, &rcWindow);
+                    if !current_native_event_window.get_definition().has_os_window_border {
+                        let rc_window: RECT = mem::uninitialized();
+                        user32::GetWindowRect(hwnd, &mut rc_window);
 
                         const int32 LocalMouseX = (int)(short)(LOWORD(lparam)) - rcWindow.left;
                         const int32 LocalMouseY = (int)(short)(HIWORD(lparam)) - rcWindow.top;
@@ -624,15 +627,15 @@ impl WindowsApplication {
                 },
                 //break;
                 WM_NCACTIVATE => {
-                    if !current_native_event_window->GetDefinition().has_os_window_border {
+                    if !current_native_event_window.get_definition().has_os_window_border {
                         // Unless using the OS window border, intercept calls to prevent non-client area drawing a border upon activation or deactivation
                         // Return true to ensure standard activation happens
-                        return true;
+                        return TRUE;
                     }
                 },
                 //break;
                 WM_NCPAINT => {
-                    if !current_native_event_window->GetDefinition().has_os_window_border {
+                    if !current_native_event_window.get_definition().has_os_window_border {
                         // Unless using the OS window border, intercept calls to draw the non-client area - we do this ourselves
                         return 0;
                     }
@@ -652,19 +655,19 @@ impl WindowsApplication {
                     match wparam & 0xfff0 {
                         SC_RESTORE => {
                             // Checks to see if the window is minimized.
-                            if IsIconic(hwnd) {
+                            if user32::IsIconic(hwnd) != 0 {
                                 // This is required for restoring a minimized fullscreen window
-                                user32::ShowWindow(hwnd,SW_RESTORE);
+                                user32::ShowWindow(hwnd, SW_RESTORE);
                                 return 0;
                             } else {
-                                if !MessageHandler->OnWindowAction( current_native_event_window, EWindowAction::Restore) {
+                                if !MessageHandler->OnWindowAction( current_native_event_window, WindowAction::Restore) {
                                     return 1;
                                 }
                             }
                         },
                         //break;
                         SC_MAXIMIZE => {
-                            if !MessageHandler->OnWindowAction( current_native_event_window, EWindowAction::Maximize) {
+                            if !MessageHandler->OnWindowAction( current_native_event_window, WindowAction::Maximize) {
                                 return 1;
                             }
                         },
@@ -679,56 +682,59 @@ impl WindowsApplication {
                 },
                 //break;
                 WM_GETMINMAXINFO => {
-                    MINMAXINFO* MinMaxInfo = (MINMAXINFO*)lparam;
+                    let mut min_max_info: MINMAXINFO = unsafe {
+                        let mmi = mem::transmute::<LPARAM, *const MINMAXINFO>(lparam);
+                        *mmi
+                    };
                     FWindowSizeLimits SizeLimits = MessageHandler->GetSizeLimitsForWindow(current_native_event_window);
 
                     // We need to inflate the max values if using an OS window border
                     int32 BorderWidth = 0;
                     int32 BorderHeight = 0;
-                    if current_native_event_window->GetDefinition().has_os_window_border {
-                        const DWORD WindowStyle = ::GetWindowLong(hwnd, GWL_STYLE);
-                        const DWORD WindowExStyle = ::GetWindowLong(hwnd, GWL_EXSTYLE);
+                    if current_native_event_window.get_definition().has_os_window_border {
+                        let window_style = user32::GetWindowLongW(hwnd, GWL_STYLE);
+                        let window_ex_style = user32::GetWindowLongW(hwnd, GWL_EXSTYLE);
 
                         // This adjusts a zero rect to give us the size of the border
-                        RECT BorderRect = { 0, 0, 0, 0 };
-                        user32::AdjustWindowRectEx(&BorderRect, WindowStyle, false, WindowExStyle);
+                        let mut border_rect: RECT = mem::zeroed();
+                        user32::AdjustWindowRectEx(&mut border_rect, WindowStyle, false, WindowExStyle);
 
                         BorderWidth = BorderRect.right - BorderRect.left;
                         BorderHeight = BorderRect.bottom - BorderRect.top;
                     }
 
                     // We always apply BorderWidth and BorderHeight since Slate always works with client area window sizes
-                    MinMaxInfo->ptMinTrackSize.x = FMath::RoundToInt( SizeLimits.GetMinWidth().Get(MinMaxInfo->ptMinTrackSize.x));
-                    MinMaxInfo->ptMinTrackSize.y = FMath::RoundToInt( SizeLimits.GetMinHeight().Get(MinMaxInfo->ptMinTrackSize.y));
-                    MinMaxInfo->ptMaxTrackSize.x = FMath::RoundToInt( SizeLimits.GetMaxWidth().Get(MinMaxInfo->ptMaxTrackSize.x) ) + BorderWidth;
-                    MinMaxInfo->ptMaxTrackSize.y = FMath::RoundToInt( SizeLimits.GetMaxHeight().Get(MinMaxInfo->ptMaxTrackSize.y) ) + BorderHeight;
+                    min_max_info.ptMinTrackSize.x = FMath::RoundToInt( SizeLimits.GetMinWidth().Get(min_max_info.ptMinTrackSize.x));
+                    min_max_info.ptMinTrackSize.y = FMath::RoundToInt( SizeLimits.GetMinHeight().Get(min_max_info.ptMinTrackSize.y));
+                    min_max_info.ptMaxTrackSize.x = FMath::RoundToInt( SizeLimits.GetMaxWidth().Get(min_max_info.ptMaxTrackSize.x) ) + BorderWidth;
+                    min_max_info.ptMaxTrackSize.y = FMath::RoundToInt( SizeLimits.GetMaxHeight().Get(min_max_info.ptMaxTrackSize.y) ) + BorderHeight;
                     return 0;
                 },
                 //break;
                 WM_NCLBUTTONDOWN |
                 WM_NCRBUTTONDOWN |
                 WM_NCMBUTTONDOWN => {
-                    match wparam => {
+                    match wparam {
                         HTMINBUTTON => {
-                            if !MessageHandler->OnWindowAction( current_native_event_window, EWindowAction::ClickedNonClientArea) {
+                            if !MessageHandler->OnWindowAction( current_native_event_window, WindowAction::ClickedNonClientArea) {
                                 return 1;
                             }
                         },
                         //break;
                         HTMAXBUTTON => {
-                            if !MessageHandler->OnWindowAction( current_native_event_window, EWindowAction::ClickedNonClientArea) {
+                            if !MessageHandler->OnWindowAction( current_native_event_window, WindowAction::ClickedNonClientArea) {
                                 return 1;
                             }
                         },
                         //break;
                         HTCLOSE => {
-                            if !MessageHandler->OnWindowAction( current_native_event_window, EWindowAction::ClickedNonClientArea) {
+                            if !MessageHandler->OnWindowAction( current_native_event_window, WindowAction::ClickedNonClientArea) {
                                 return 1;
                             }
                         },
                         //break;
                         HTCAPTION => {
-                            if !MessageHandler->OnWindowAction( current_native_event_window, EWindowAction::ClickedNonClientArea) {
+                            if !MessageHandler->OnWindowAction( current_native_event_window, WindowAction::ClickedNonClientArea) {
                                 return 1;
                             }
                         }
@@ -738,14 +744,13 @@ impl WindowsApplication {
                 //break;
                 WM_DISPLAYCHANGE => {
                     // Slate needs to know when desktop size changes.
-                    FDisplayMetrics DisplayMetrics;
-                    FDisplayMetrics::GetDisplayMetrics(DisplayMetrics);
+                    let mut display_metrics: DisplayMetrics::new();
                     BroadcastDisplayMetricsChanged(DisplayMetrics);
                 },
                 //break;
                 WM_GETDLGCODE => {
                     // Slate wants all keys and messages.
-                    return DLGC_WANTALLKEYS;
+                    return DLGC_WANTALLKEYS as i32;
                 },
                 //break;
                 WM_CREATE => {
@@ -756,17 +761,70 @@ impl WindowsApplication {
                     QueryConnectedMice();
                 },
                 default => {
-                    int32 HandlerResult = 0;
+                    let mut handler_result: i32 = 0;
 
                     // give others a chance to handle unprocessed messages
                     for (auto Handler : MessageHandlers) {
-                        if Handler->ProcessMessage(hwnd, msg, wparam, lparam, HandlerResult) {
+                        if Handler->ProcessMessage(hwnd, msg, wparam, lparam, handler_result) {
                             return HandlerResult;
                         }
                     }
                 },
             }
         }
-        user32::DefWindowProc(hwnd, msg, wparam, lparam)
+        user32::DefWindowProcW(hwnd, msg, wparam, lparam)
+    }
+    /*void FWindowsApplication::GetInitialDisplayMetrics( FDisplayMetrics& OutDisplayMetrics ) const {
+        OutDisplayMetrics = InitialDisplayMetrics;
+    }*/
+}
+
+//TODO this struct has cross-platform applications, so it shouldn't be implemented within the Windows-specific files. 
+pub struct DisplayMetrics {
+    primary_display_width: i32,
+    primary_display_height: i32,
+    monitor_info: Vec<MonitorInfo>,
+    primary_display_work_area_rect: PlatformRect,
+    virtual_display_rect: PlatformRect,
+    //TODO: The following should be a Vector2D
+    title_safe_padding_size: (i32, i32),
+    //TODO: The following should be a Vector2D
+    action_safe_padding_size: (i32, i32),
+}
+
+impl DisplayMetrics {
+    pub fn new() -> DisplayMetrics {
+        unsafe {
+            let mut out_display_metrics: DisplayMetrics = mem::uninitialized();
+            // Total screen size of the primary monitor
+            out_display_metrics.primary_display_width = user32::GetSystemMetrics(SM_CXSCREEN);
+            out_display_metrics.primary_display_height = user32::GetSystemMetrics(SM_CYSCREEN);
+
+            // Get the screen rect of the primary monitor, excluding taskbar etc.
+            let mut work_area_rect: RECT = mem::zeroed();
+            if !user32::SystemParametersInfo(SPI_GETWORKAREA, 0, &mut work_area_rect, 0) {
+                work_area_rect.top = 0;
+                work_area_rect.bottom = 0;
+                work_area_rect.left = 0;
+                work_area_rect.right = 0;
+            }
+
+            out_display_metrics.primary_display_work_area_rect.left = work_area_rect.left;
+            out_display_metrics.primary_display_work_area_rect.top = work_area_rect.top;
+            out_display_metrics.primary_display_work_area_rect.right = work_area_rect.right;
+            out_display_metrics.primary_display_work_area_rect.bottom = work_area_rect.bottom;
+    
+            // Virtual desktop area
+            out_display_metrics.virtual_display_rect.left = user32::GetSystemMetrics(SM_XVIRTUALSCREEN);
+            out_display_metrics.virtual_display_rect.top = user32::GetSystemMetrics(SM_YVIRTUALSCREEN);
+            out_display_metrics.virtual_display_rect.right = out_display_metrics.virtual_display_rect.left + user32::GetSystemMetrics(SM_CXVIRTUALSCREEN);
+            out_display_metrics.virtual_display_rect.bottom = out_display_metrics.virtual_display_rect.top + user32::GetSystemMetrics(SM_CYVIRTUALSCREEN);
+
+            // Get connected monitor information
+            user32::GetMonitorInfo(out_display_metrics.monitor_info);
+
+            // Apply the debug safe zones
+            out_display_metrics.ApplyDefaultSafeZones();
+        }
     }
 }

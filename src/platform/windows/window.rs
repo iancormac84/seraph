@@ -1,7 +1,7 @@
 use dwmapi;
 use gdi32;
 use platform::generic::window::{GenericWindow, WindowMode};
-use platform::generic::window_definition::{WindowDefinition, WindowTransparency};
+use platform::generic::window_definition::{WindowDefinition, WindowTransparency, WindowType};
 use platform::windows::application::WindowsApplication;
 use std::{cmp, io, mem, ptr};
 use std::ffi::OsStr;
@@ -249,12 +249,25 @@ impl WindowsWindow {
         let mut region: HRGN;
         if self.region_width != -1 && self.region_height != -1 {
         	if self.is_maximized() {
-        		let window_border_size = self.get_window_border_size();
-        		unsafe {
-        			region = gdi32::CreateRectRgn(window_border_size as i32, window_border_size as i32, self.region_width - window_border_size as i32, self.region_height - window_border_size as i32);
+        		if self.get_definition().window_type == WindowType::GameWindow && !self.get_definition().has_os_window_border {
+        			// Windows caches the cxWindowBorders size at window creation. Even if borders are removed or resized Windows will continue to use this value when evaluating regions
+				    // and sizing windows. When maximized this means that our window position will be offset from the screen origin by (-cxWindowBorders,-cxWindowBorders). We want to
+				    // display only the region within the maximized screen area, so offset our upper left and lower right by cxWindowBorders.
+				    unsafe {
+				        let mut window_info: WINDOWINFO = mem::zeroed();
+				        window_info.cbSize = mem::size_of::<WINDOWINFO>() as u32;
+				        user32::GetWindowInfo(self.hwnd, &mut window_info);
+
+				        region = gdi32::CreateRectRgn(window_info.cxWindowBorders as i32, window_info.cxWindowBorders as i32, self.region_width + window_info.cxWindowBorders as i32, self.region_height + window_info.cxWindowBorders as i32);
+				    }
+        		} else {
+                    let window_border_size = self.get_window_border_size();
+        		    unsafe {
+        			    region = gdi32::CreateRectRgn(window_border_size as i32, window_border_size as i32, self.region_width - window_border_size as i32, self.region_height - window_border_size as i32);
+        		    }
         		}
         	} else {
-        		let use_corner_radius = self.window_definitions.transparency_support != WindowTransparency::PerPixel && self.window_definitions.corner_radius > 0;
+        		let use_corner_radius = self.window_mode == WindowMode::Windowed && self.window_definitions.transparency_support != WindowTransparency::PerPixel && self.window_definitions.corner_radius > 0;
         		if use_corner_radius {
         			unsafe {
         				region = gdi32::CreateRoundRectRgn(0, 0, self.region_width + 1, self.region_height + 1, self.window_definitions.corner_radius, self.window_definitions.corner_radius);
@@ -516,13 +529,19 @@ impl GenericWindow for WindowsWindow {
 			}
 
 			if new_window_mode == WindowMode::WindowedFullscreen || new_window_mode == WindowMode::Fullscreen {
+				let is_borderless_game_window = self.window_definitions.window_type == WindowType::GameWindow && !self.window_definitions.has_os_window_border;
 			    unsafe {
 				    user32::GetWindowPlacement(self.hwnd, &mut self.pre_fullscreen_window_placement);
 			    }
 
 			    // Setup Win32 flags for fullscreen window
-			    window_style &= !windowed_mode_style as i32;
-			    window_style |= fullscreen_mode_style as i32;
+			    if is_borderless_game_window && !true_fullscreen {
+				    window_style &= !fullscreen_mode_style as i32;
+				    window_style |= windowed_mode_style as i32;
+			    } else {
+				    window_style &= !windowed_mode_style as i32;
+				    window_style |= fullscreen_mode_style as i32;
+			    }
             
                 unsafe {
 			        user32::SetWindowLongW(self.hwnd, GWL_STYLE, window_style);
@@ -633,6 +652,12 @@ impl GenericWindow for WindowsWindow {
     	result == res
     }
     fn get_window_border_size(&self) -> u32 {
+    	if self.get_definition().window_type == WindowType::GameWindow && !self.get_definition().has_os_window_border {
+		    // Our borderless game windows actually have a thick border to allow sizing, which we draw over to simulate
+		    // a borderless window. We return zero here so that the game will correctly behave as if this is truly a
+		    // borderless window.
+		    return 0;
+	    }
 	    unsafe {
 	    	let mut window_info: WINDOWINFO = mem::uninitialized();
 	        window_info.cbSize = mem::size_of::<WINDOWINFO>() as u32;
@@ -653,6 +678,9 @@ impl GenericWindow for WindowsWindow {
     fn set_text(&self, text: Vec<u16>) {
     	//TODO: genericize the text variable
     	unsafe { user32::SetWindowTextW(self.hwnd, text.as_ptr()); }
+    }
+    fn get_definition(&self) -> WindowDefinition {
+    	*self.window_definitions
     }
     fn adjust_cached_size(&self, size: &mut (i32, i32)) {
 		//Unreal Engine 4's check for if the FGenericWindowDefinition is valid is necessary because this is a pointer. Is it necessary in my code?

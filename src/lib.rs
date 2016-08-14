@@ -1,5 +1,7 @@
 #[macro_use]
 extern crate bitflags;
+#[macro_use]
+extern crate lazy_static;
 extern crate dwmapi;
 extern crate gdi32;
 extern crate ole32;
