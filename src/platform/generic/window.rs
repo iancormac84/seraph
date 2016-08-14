@@ -1,3 +1,5 @@
+use std::os::raw::c_void;
+
 #[derive(PartialEq, Copy, Clone)]
 pub enum WindowMode {
 	/** The window is in true fullscreen mode */
@@ -32,7 +34,7 @@ pub trait GenericWindow {
 	fn is_point_in_window(&self, x: i32, y: i32) -> bool;
 	fn get_window_border_size(&self) -> u32;
 	fn get_window_title_bar_size(&self) -> i32;
-	//fn get_os_window_handle(&self) -> *const c_void;
+	fn get_os_window_handle(&self) -> *const c_void;
 	fn is_foreground_window(&self) -> bool;
     fn set_text(&self, text: Vec<u16>);
     //virtual const FGenericWindowDefinition& GetDefinition() const;

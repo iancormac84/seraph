@@ -5,6 +5,7 @@ use platform::generic::window_definition::{WindowDefinition, WindowTransparency}
 use platform::windows::application::WindowsApplication;
 use std::{cmp, io, mem, ptr};
 use std::ffi::OsStr;
+use std::os::raw::c_void;
 use std::os::windows::ffi::OsStrExt;
 use std::rc::Rc;
 use user32;
@@ -37,6 +38,7 @@ pub trait DropTarget {
     fn drop(&mut self, pDataObj: *const IDataObject, grfKeyState: DWORD, pt: POINTL, pdwEffect: *mut DWORD) -> HRESULT;
 }
 
+//TODO can I make this capable of clone? I want to try this so I don't have to do a clone in the WindowsApplication::find_window_by_hwnd method.
 pub struct WindowsWindow {
 	pub app_window_class: &'static str,
 	owning_application: *const WindowsApplication,
@@ -638,6 +640,9 @@ impl GenericWindow for WindowsWindow {
 
 	        window_info.cxWindowBorders
 	    }
+    }
+    fn get_os_window_handle(&self) -> *const c_void {
+    	self.hwnd as *const c_void
     }
     fn get_window_title_bar_size(&self) -> i32 {
 	    unsafe { user32::GetSystemMetrics(SM_CYCAPTION) }
