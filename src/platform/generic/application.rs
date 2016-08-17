@@ -1,3 +1,9 @@
+use platform::generic::cursor::ICursor;
+use std::rc::Rc;
+
+pub static mut DEBUG_SAFE_ZONE_RATIO: f32 = 1.0;
+pub static mut DEBUG_ACTION_ZONE_RATIO: f32 = 1.0;
+
 bitflags! {
     flags ModifierKey: u8 {
         const NONE = 0,
@@ -35,11 +41,11 @@ pub struct PlatformRect {
 }
 
 pub struct MonitorInfo {
-	name: String,
-	id: String,
-	native_width: i32,
-	native_height: i32,
-	is_primary: bool,
+	pub name: String,
+	pub id: String,
+	pub native_width: i32,
+	pub native_height: i32,
+	pub is_primary: bool,
 }
 
 pub enum WindowTitleAlignment {
@@ -48,4 +54,16 @@ pub enum WindowTitleAlignment {
 	Right,
 }
 
-//TODO GenericApplication trait
+pub struct GenericApplication {
+	cursor: Rc<ICursor>,
+	message_handler: Rc<Box<ApplicationMessageHandler>>,
+}
+
+impl GenericApplication {
+	pub fn new(cursor: &Rc<ICursor>) -> GenericApplication {
+        GenericApplication {
+        	cursor: *cursor,
+        	message_handler: 
+        }
+	}
+}

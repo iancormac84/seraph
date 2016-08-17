@@ -1,22 +1,40 @@
+use cgmath::Point2;
 use dwmapi;
-use platform::generic::application::PlatformRect;
+use platform::generic::application::{MonitorInfo, PlatformRect, DEBUG_ACTION_ZONE_RATIO, DEBUG_SAFE_ZONE_RATIO};
+use platform::generic::application_message_handler::WindowZone;
+use platform::generic::cursor::ICursor;
 use platform::generic::window::GenericWindow;
 use platform::generic::window_definition::{WindowDefinition, WindowTransparency, WindowType};
 use platform::windows::window::WindowsWindow;
+use setupapi;
 use std::collections::BTreeMap;
+use std::io::Error;
+use std::os::raw::c_void;
 use std::{mem, ptr};
 use std::rc::{Rc, Weak};
 use user32;
+use uuid::GUID_DEVCLASS_MONITOR;
 use winapi::{
-    CS_DBLCLKS, DLGC_WANTALLKEYS, DWORD, FALSE, GWL_STYLE, GWL_EXSTYLE, HICON, HINSTANCE, HIWORD, HMONITOR, HWND, HRAWINPUT, IMN_CHANGECANDIDATE, IMN_CLOSECANDIDATE, IMN_CLOSESTATUSWINDOW,
-    IMN_GUIDELINE, IMN_OPENCANDIDATE, IMN_OPENSTATUSWINDOW, IMN_PRIVATE, IMN_SETCANDIDATEPOS, IMN_SETCOMPOSITIONFONT, IMN_SETCOMPOSITIONWINDOW, IMN_SETCONVERSIONMODE, IMN_SETOPENSTATUS,
-    IMN_SETSENTENCEMODE, IMN_SETSTATUSWINDOWPOS, IMR_CANDIDATEWINDOW, IMR_COMPOSITIONFONT, IMR_COMPOSITIONWINDOW, IMR_CONFIRMRECONVERTSTRING, IMR_DOCUMENTFEED, IMR_QUERYCHARPOSITION,
-    IMR_RECONVERTSTRING, LPARAM, LPNCCALCSIZE_PARAMS, MINMAXINFO, MONITORINFO, MONITOR_DEFAULTTONEAREST, NCCALCSIZE_PARAMS, POINT, POINTL, RAWINPUTDEVICE, RAWINPUTHEADER, RECT, RIDEV_REMOVE,
-    RID_INPUT, SM_CXSCREEN, SM_CYSCREEN, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SPI_GETWORKAREA, SW_RESTORE, TRUE, VK_SPACE, WINDOWINFO, WM_IME_CHAR,
+    c_short, CR_SUCCESS, CS_DBLCLKS, DICS_FLAG_GLOBAL, DIGCF_PRESENT, DIREG_DEV, DISPLAY_DEVICE_ACTIVE, DISPLAY_DEVICE_ATTACHED_TO_DESKTOP, DISPLAY_DEVICE_MIRRORING_DRIVER,
+    DISPLAY_DEVICE_PRIMARY_DEVICE, DISPLAY_DEVICEW, DLGC_WANTALLKEYS, DWORD, ERROR_NO_MORE_ITEMS, FALSE, GUID, GWL_STYLE, GWL_EXSTYLE, HDEVINFO, HICON, HINSTANCE, HIWORD, HKEY, HMONITOR,
+    HRAWINPUT, HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCAPTION, HTCLIENT, HTCLOSE, HTLEFT, HTMINBUTTON, HTMAXBUTTON, HTNOWHERE, HTRIGHT, HTSYSMENU, HTTOP, HTTOPLEFT, HTTOPRIGHT, HWND,
+    IMN_CHANGECANDIDATE, IMN_CLOSECANDIDATE, IMN_CLOSESTATUSWINDOW, IMN_GUIDELINE, IMN_OPENCANDIDATE, IMN_OPENSTATUSWINDOW, IMN_PRIVATE, IMN_SETCANDIDATEPOS,
+    IMN_SETCOMPOSITIONFONT, IMN_SETCOMPOSITIONWINDOW, IMN_SETCONVERSIONMODE, IMN_SETOPENSTATUS, IMN_SETSENTENCEMODE, IMN_SETSTATUSWINDOWPOS, IMR_CANDIDATEWINDOW, IMR_COMPOSITIONFONT,
+    IMR_COMPOSITIONWINDOW, IMR_CONFIRMRECONVERTSTRING, IMR_DOCUMENTFEED, IMR_QUERYCHARPOSITION, IMR_RECONVERTSTRING, INVALID_HANDLE_VALUE, KEY_READ, LOWORD, LPARAM, LPNCCALCSIZE_PARAMS,
+    LPVOID, LPWSTR, LRESULT,
+    MAX_DEVICE_ID_LEN, MINMAXINFO, MONITORINFO, MONITOR_DEFAULTTONEAREST, MOUSE_MOVE_ABSOLUTE, MOUSE_MOVE_RELATIVE, MSG, NCCALCSIZE_PARAMS, PM_REMOVE, POINT, POINTL, RAWINPUT, RAWINPUTDEVICE, RAWINPUTHEADER,
+    RECT, RIDEV_REMOVE, RID_INPUT, RIM_TYPEMOUSE, SM_CXSCREEN,
+    SM_CYSCREEN, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SP_DEVINFO_DATA, SPI_GETWORKAREA, SW_RESTORE, TRUE, VK_F4, VK_SPACE, WINDOWINFO, WM_IME_CHAR,
     WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION, WM_IME_NOTIFY, WM_IME_REQUEST, WM_IME_SETCONTEXT, WM_IME_STARTCOMPOSITION, WM_INPUTLANGCHANGE, WM_INPUTLANGCHANGEREQUEST, WM_KEYDOWN, WM_KEYUP,
     WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDBLCLK, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCLBUTTONDOWN, WM_NCMBUTTONDOWN, WM_NCMOUSEMOVE,
-    WM_NCRBUTTONDOWN, WM_RBUTTONDBLCLK, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SYSKEYUP, WM_XBUTTONDBLCLK, WM_XBUTTONDOWN, WM_XBUTTONUP, WNDCLASSW, WPARAM
+    WM_NCRBUTTONDOWN, WM_RBUTTONDBLCLK, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SYSKEYUP, WM_XBUTTONDBLCLK, WM_XBUTTONDOWN, WM_XBUTTONUP, WMSZ_BOTTOM, WMSZ_BOTTOMLEFT, WMSZ_BOTTOMRIGHT, WMSZ_LEFT,
+    WMSZ_RIGHT, WMSZ_TOP, WMSZ_TOPLEFT, WMSZ_TOPRIGHT, WNDCLASSW, WPARAM, WVR_VALIDRECTS
 };
+use winreg::RegKey;
+
+type IntPoint2 = Point2<i32>;
+
+static mut windows_application: *mut WindowsApplication = ptr::null_mut();
 
 lazy_static! {
     static ref WINDOWS_MESSAGE_STRINGS: BTreeMap<u32, &'static str> = {
@@ -63,7 +81,12 @@ lazy_static! {
         result.insert(IMR_RECONVERTSTRING, "IMR_RECONVERTSTRING");
         result
     };
+    static ref MINIMIZED_WINDOW_POSITION: IntPoint2 = IntPoint2::new(-32000, -32000);
 }
+
+static HIT_RESULTS: [LRESULT; 15] = [HTNOWHERE as i64, HTTOPLEFT as i64, HTTOP as i64, HTTOPRIGHT as i64, HTLEFT as i64, HTCLIENT as i64,
+                                     HTRIGHT as i64, HTBOTTOMLEFT as i64, HTBOTTOM as i64, HTBOTTOMRIGHT as i64, HTCAPTION as i64,
+                                     HTMINBUTTON as i64, HTMAXBUTTON as i64, HTCLOSE as i64, HTSYSMENU as i64];
 
 pub enum TaskbarProgressState {
     //Stops displaying progress and returns the button to its normal state.
@@ -178,7 +201,7 @@ pub enum ModifierKey {
 
 //TODO implement GenericApplication trait. Also most likely trait based on IForceFeedbackSystem.
 pub struct WindowsApplication {
-	minimized_window_position: (i32, i32),
+	minimized_window_position: IntPoint2,
 	instance_handle: HINSTANCE,
     using_high_precision_mouse_input: bool,
     is_mouse_attached: bool,
@@ -187,14 +210,27 @@ pub struct WindowsApplication {
     deferred_drag_drop_operations: Vec<DeferredWindowsDragDropOperation>,
     message_handlers: Vec<Box<IWindowsMessageHandler>>,
     windows: Vec<Rc<WindowsWindow>>,
+    in_modal_size_loop: bool,
+    allowed_to_defer_message_processing: bool,
 }
 
 impl WindowsApplication {
-    pub fn register_class(&self, hinstance: HINSTANCE, hicon: HICON) -> bool {
+    pub fn create_windows_application(hinstance: HINSTANCE, hicon: HICON) -> *mut WindowsApplication {
+        let app = WindowsApplication::new(hinstance, hicon);
+        windows_application = *mut app;
+        windows_application
+    }
+    pub fn new(hinstance: HINSTANCE, hicon: HICON) -> WindowsApplication {
+        unsafe {
+            let win_app: WindowsApplication = mem::uninitialized();
+            win_app
+        }
+    }
+    fn register_class(&self, hinstance: HINSTANCE, hicon: HICON) -> bool {
         unsafe {
             let mut wc: WNDCLASSW = mem::zeroed();
             wc.style = CS_DBLCLKS; // We want to receive double clicks
-            wc.lpfnWndProc = AppWndProc;
+            wc.lpfnWndProc = Some(app_wnd_proc);
             wc.cbClsExtra = 0;
             wc.cbWndExtra = 0;
             wc.hInstance = hinstance;
@@ -202,7 +238,7 @@ impl WindowsApplication {
             wc.hCursor = ptr::null_mut();  // We manage the cursor ourselves
             wc.hbrBackground = ptr::null_mut(); // Transparent
             wc.lpszMenuName = ptr::null_mut();
-            wc.lpszClassName = FWindowsWindow::AppWindowClass;
+            wc.lpszClassName = WindowsWindow::app_window_class;
         }
     }
 	pub fn get_window_transparency_support(&self) -> WindowTransparency {
@@ -310,26 +346,26 @@ impl WindowsApplication {
                 WM_IME_ENDCOMPOSITION |
                 WM_IME_CHAR => {
                     //UE_LOG(LogWindowsDesktop, Verbose, TEXT("%s"), *(WindowsMessageStrings[msg]));
-                    self.defer_message(current_native_event_window, hwnd, msg, wparam, lparam);
+                    self.defer_message(&current_native_event_window, hwnd, msg, wparam, lparam, 0, 0, 0);
                     return 0;
                 },
                 WM_IME_NOTIFY => {
                     //UE_LOG(LogWindowsDesktop, Verbose, TEXT("WM_IME_NOTIFY - %s"), IMNStrings.Find(wparam) ? *(IMNStrings[wparam]) : nullptr);
-                    self.defer_message(current_native_event_window, hwnd, msg, wparam, lparam);
+                    self.defer_message(&current_native_event_window, hwnd, msg, wparam, lparam, 0, 0, 0);
                     return 0;
                 },
                 WM_IME_REQUEST => {
                     //UE_LOG(LogWindowsDesktop, Verbose, TEXT("WM_IME_REQUEST - %s"), IMRStrings.Find(wparam) ? *(IMRStrings[wparam]) : nullptr);
-                    self.defer_message(current_native_event_window, hwnd, msg, wparam, lparam);
+                    self.defer_message(&current_native_event_window, hwnd, msg, wparam, lparam, 0, 0, 0);
                     return 0;
                 },
                 // Character
                 WM_CHAR => {
-                    self.defer_message(current_native_event_window, hwnd, msg, wparam, lparam);
+                    self.defer_message(&current_native_event_window, hwnd, msg, wparam, lparam, 0, 0, 0);
                     return 0;
                 },
                 WM_SYSCHAR => {
-                    if HIWORD(lparam) & 0x2000 != 0 && wparam == VK_SPACE {
+                    if HIWORD(lparam as u32) & 0x2000 != 0 && wparam == VK_SPACE as u64 {
                         // Do not handle Alt+Space so that it passes through and opens the window system menu
                         //break;
                     } else {
@@ -339,8 +375,8 @@ impl WindowsApplication {
                 WM_SYSKEYDOWN => {
                     // Alt-F4 or Alt+Space was pressed. 
                     // Allow alt+f4 to close the window and alt+space to open the window menu
-                    if wparam != VK_F4 && wparam != VK_SPACE {
-                        self.defer_message(current_native_event_window, hwnd, msg, wparam, lparam);
+                    if wparam != VK_F4 as u64 && wparam != VK_SPACE as u64 {
+                        self.defer_message(&current_native_event_window, hwnd, msg, wparam, lparam, 0, 0, 0);
                     }
                 },
                 WM_KEYDOWN |
@@ -361,12 +397,12 @@ impl WindowsApplication {
                 WM_NCMOUSEMOVE |
                 WM_MOUSEMOVE |
                 WM_MOUSEWHEEL => {
-                    self.defer_message(current_native_event_window, hwnd, msg, wparam, lparam);
+                    self.defer_message(&current_native_event_window, hwnd, msg, wparam, lparam, 0, 0, 0);
                     // Handled
                     return 0;
                 },
                 WM_SETCURSOR => {
-                    self.defer_message(current_native_event_window, hwnd, msg, wparam, lparam);
+                    self.defer_message(&current_native_event_window, hwnd, msg, wparam, lparam, 0, 0, 0);
 
                     // If we're rendering our own window border, we'll "handle" this event so that Windows doesn't try to manage the cursor
                     // appearance for us in the non-client area.  However, for OS window borders we need to fall through to DefWindowProc to
@@ -383,27 +419,28 @@ impl WindowsApplication {
                         user32::GetRawInputData(lparam as HRAWINPUT, RID_INPUT, ptr::null_mut(), &mut size, mem::size_of::<RAWINPUTHEADER>() as u32);
                     }
 
-                    TScopedPointer<uint8> RawData(new uint8[Size]);
+                    let raw = unsafe {
+                        let mut raw = mem::uninitialized::<RAWINPUT>();
+                        assert!(user32::GetRawInputData(lparam as HRAWINPUT, RID_INPUT, ((&mut raw) as *mut RAWINPUT) as LPVOID, &mut size, mem::size_of::<RAWINPUTHEADER>() as u32) == size);
+                        raw
+                    };
+                    let raw_mouse = unsafe { raw.mouse() };
 
-                    if user32::GetRawInputData(lparam as HRAWINPUT, RID_INPUT, RawData.GetOwnedPointer(), &size, mem::size_of::<RAWINPUTHEADER>() as u32) == size {
-                        const RAWINPUT* const Raw = (const RAWINPUT* const)RawData.GetOwnedPointer();
-
-                        if (Raw->header.dwType == RIM_TYPEMOUSE) {
-                            const bool IsAbsoluteInput = (Raw->data.mouse.usFlags & MOUSE_MOVE_ABSOLUTE) == MOUSE_MOVE_ABSOLUTE;
-                            if IsAbsoluteInput {
-                                // Since the raw input is coming in as absolute it is likely the user is using a tablet
-                                // or perhaps is interacting through a virtual desktop
-                                self.defer_message(current_native_event_window, hwnd, msg, wparam, lparam, 0, 0, MOUSE_MOVE_ABSOLUTE);
-                                return 1;
-                            }
-
-                            // Since raw input is coming in as relative it is likely a traditional mouse device
-                            const int xPosRelative = Raw->data.mouse.lLastX;
-                            const int yPosRelative = Raw->data.mouse.lLastY;
-
-                            self.defer_message(current_native_event_window, hwnd, msg, wparam, lparam, xPosRelative, yPosRelative, MOUSE_MOVE_RELATIVE);
+                    if raw.header.dwType == RIM_TYPEMOUSE {
+                        let is_absolute_input = (raw_mouse.usFlags & MOUSE_MOVE_ABSOLUTE) == MOUSE_MOVE_ABSOLUTE;
+                        if is_absolute_input {
+                            // Since the raw input is coming in as absolute it is likely the user is using a tablet
+                            // or perhaps is interacting through a virtual desktop
+                            self.defer_message(&current_native_event_window, hwnd, msg, wparam, lparam, 0, 0, MOUSE_MOVE_ABSOLUTE as u32);
                             return 1;
                         }
+
+                        // Since raw input is coming in as relative it is likely a traditional mouse device
+                        let x_pos_relative = raw_mouse.lLastX;
+                        let y_pos_relative = raw_mouse.lLastY;
+
+                        self.defer_message(&current_native_event_window, hwnd, msg, wparam, lparam, x_pos_relative, y_pos_relative, MOUSE_MOVE_RELATIVE as u32);
+                        return 1;
                     }
                 },
                 WM_NCCALCSIZE => {
@@ -451,23 +488,23 @@ impl WindowsApplication {
                             (&*resizing_rects.lppos).cy -= 2 * window_info.cxWindowBorders as i32;
 
                             // Informs Windows to use the values as we altered them.
-                            return WVR_VALIDRECTS;
+                            return WVR_VALIDRECTS as i32;
                         }
                         return 0;
                     }
                 },
                 //break;
                 WM_SHOWWINDOW => {
-                    self.defer_message(current_native_event_window, hwnd, msg, wparam, lparam);
+                    self.defer_message(&current_native_event_window, hwnd, msg, wparam, lparam, 0, 0, 0);
                 },
                 //break;
                 WM_SIZE => {
-                    self.defer_message(current_native_event_window, hwnd, msg, wparam, lparam);
+                    self.defer_message(&current_native_event_window, hwnd, msg, wparam, lparam, 0, 0, 0);
                     return 0;
                 },
                 //break;
                 WM_SIZING => {
-                    self.defer_message(current_native_event_window, hwnd, msg, wparam, lparam, 0, 0);
+                    self.defer_message(&current_native_event_window, hwnd, msg, wparam, lparam, 0, 0, 0);
         
                     if current_native_event_window.get_definition().should_preserve_aspect_ratio {
                         // The rect we get in lparam is window rect, but we need to preserve client's aspect ratio,
@@ -489,70 +526,63 @@ impl WindowsApplication {
                         rect.top -= test_rect.top;
                         rect.bottom -= test_rect.bottom;
 
-                        const float AspectRatio = current_native_event_window->GetAspectRatio();
-                        int32 NewWidth = rect.right - rect.left;
-                        int32 NewHeight = rect.bottom - rect.top;
-
-                        match wparam {
-                            WMSZ_LEFT | WMSZ_RIGHT => {
-                                int32 AdjustedHeight = NewWidth / AspectRatio;
-                                rect.top -= (AdjustedHeight - NewHeight) / 2;
-                                rect.bottom += (AdjustedHeight - NewHeight) / 2;
-                                //break;
-                            },
-                            WMSZ_TOP | WMSZ_BOTTOM => {
-                                int32 AdjustedWidth = NewHeight * AspectRatio;
-                                rect.left -= (AdjustedWidth - NewWidth) / 2;
-                                rect.right += (AdjustedWidth - NewWidth) / 2;
-                                //break;
-                            },
-                            WMSZ_TOPLEFT => {
-                                int32 AdjustedHeight = NewWidth / AspectRatio;
-                                rect.top -= AdjustedHeight - NewHeight;
-                                //break;
-                            },
-                            WMSZ_TOPRIGHT => {
-                                int32 AdjustedHeight = NewWidth / AspectRatio;
-                                rect.top -= AdjustedHeight - NewHeight;
-                                //break;
-                            },
-                            WMSZ_BOTTOMLEFT => {
-                                int32 AdjustedHeight = NewWidth / AspectRatio;
-                                rect.bottom += AdjustedHeight - NewHeight;
-                                //break;
-                            },
-                            WMSZ_BOTTOMRIGHT => {
-                                int32 AdjustedHeight = NewWidth / AspectRatio;
-                                rect.bottom += AdjustedHeight - NewHeight;
-                                //break;
-                            }
+                        let aspect_ratio = current_native_event_window.get_aspect_ratio();
+                        let new_width = rect.right - rect.left;
+                        let new_height = rect.bottom - rect.top;
+                        
+                        if wparam == WMSZ_LEFT as u64 || wparam == WMSZ_RIGHT as u64 {
+                            let adjusted_height: i32 = new_width / aspect_ratio as i32;
+                            rect.top -= (adjusted_height - new_height) / 2;
+                            rect.bottom += (adjusted_height - new_height) / 2;
+                            //break;
+                        } else if wparam == WMSZ_TOP as u64 || wparam == WMSZ_BOTTOM as u64 {
+                            let adjusted_width: i32 = new_height * aspect_ratio as i32;
+                            rect.left -= (adjusted_width - new_width) / 2;
+                            rect.right += (adjusted_width - new_width) / 2;
+                            //break;
+                        } else if wparam == WMSZ_TOPLEFT as u64 {
+                            let adjusted_height: i32 = new_width / aspect_ratio as i32;
+                            rect.top -= adjusted_height - new_height;
+                            //break;
+                        } else if wparam == WMSZ_TOPRIGHT as u64 {
+                            let adjusted_height: i32 = new_width / aspect_ratio as i32;
+                            rect.top -= adjusted_height - new_height;
+                            //break;
+                        } else if wparam == WMSZ_BOTTOMLEFT as u64 {
+                            let adjusted_height: i32 = new_width / aspect_ratio as i32;
+                            rect.bottom += adjusted_height - new_height;
+                            //break;
+                        } else if wparam == WMSZ_BOTTOMRIGHT as u64 {
+                            let adjusted_height: i32 = new_width / aspect_ratio as i32;
+                            rect.bottom += adjusted_height - new_height;
+                            //break;
                         }
 
-                        user32::AdjustWindowRectEx(Rect, window_info.dwStyle, false, window_info.dwExStyle);
+                        user32::AdjustWindowRectEx(&mut rect, window_info.dwStyle, FALSE, window_info.dwExStyle);
 
                         return TRUE;
                     }
                 }
                 //break;
                 WM_ENTERSIZEMOVE => {
-                    bInModalSizeLoop = true;
-                    self.defer_message(current_native_event_window, hwnd, msg, wparam, lparam, 0, 0);
+                    self.in_modal_size_loop = true;
+                    self.defer_message(&current_native_event_window, hwnd, msg, wparam, lparam, 0, 0, 0);
                 },
                 //break;
                 WM_EXITSIZEMOVE => {
-                    bInModalSizeLoop = false;
-                    self.defer_message(current_native_event_window, hwnd, msg, wparam, lparam, 0, 0);
+                    self.in_modal_size_loop = false;
+                    self.defer_message(&current_native_event_window, hwnd, msg, wparam, lparam, 0, 0, 0);
                 },
                 //break;
                 WM_MOVE => {
                     // client area position
-                    const int32 NewX = (int)(short)(LOWORD(lparam));
-                    const int32 NewY = (int)(short)(HIWORD(lparam));
-                    FIntPoint NewPosition(NewX,NewY);
+                    let new_x = LOWORD(lparam as u32) as c_short as i32;
+                    let new_y = HIWORD(lparam as u32) as c_short as i32;
+                    let new_position: IntPoint2 = IntPoint2::new(new_x, new_y);
 
                     // Only cache the screen position if its not minimized
-                    if FWindowsApplication::MinimizedWindowPosition != NewPosition {
-                        MessageHandler->OnMovedWindow( current_native_event_window, NewX, NewY);
+                    if FWindowsApplication::MinimizedWindowPosition != new_position {
+                        MessageHandler->OnMovedWindow(current_native_event_window, new_x, new_y);
 
                         return 0;
                     }
@@ -564,58 +594,70 @@ impl WindowsApplication {
                         let rc_window: RECT = mem::uninitialized();
                         user32::GetWindowRect(hwnd, &mut rc_window);
 
-                        const int32 LocalMouseX = (int)(short)(LOWORD(lparam)) - rcWindow.left;
-                        const int32 LocalMouseY = (int)(short)(HIWORD(lparam)) - rcWindow.top;
+                        let local_mouse_x = LOWORD(lparam as u32) as c_short as i32 - rc_window.left;
+                        let local_mouse_y = HIWORD(lparam as u32) as c_short as i32 - rc_window.top;
                         if current_native_event_window.is_regular_window() {
-                            EWindowZone::Type Zone;
+                            let mut zone: WindowZone = mem::uninitialized();
                     
-                            if MessageHandler->ShouldProcessUserInputMessages( current_native_event_window ) {
+                            if MessageHandler->ShouldProcessUserInputMessages(current_native_event_window) {
                                 // Assumes this is not allowed to leave Slate or touch rendering
-                                Zone = MessageHandler->GetWindowZoneForPoint( current_native_event_window, LocalMouseX, LocalMouseY);
+                                zone = MessageHandler->GetWindowZoneForPoint(current_native_event_window, local_mouse_x, local_mouse_y);
                             } else {
                                 // Default to client area so that we are able to see the feedback effect when attempting to click on a non-modal window when a modal window is active
                                 // Any other window zones could have side effects and NotInWindow prevents the feedback effect.
-                                Zone = EWindowZone::ClientArea;
+                                zone = WindowZone::ClientArea;
                             }
 
-                            static const LRESULT Results[] = {HTNOWHERE, HTTOPLEFT, HTTOP, HTTOPRIGHT, HTLEFT, HTCLIENT,
-                                HTRIGHT, HTBOTTOMLEFT, HTBOTTOM, HTBOTTOMRIGHT,
-                                HTCAPTION, HTMINBUTTON, HTMAXBUTTON, HTCLOSE, HTSYSMENU};
-
-                            return Results[Zone];
+                            return HIT_RESULTS[zone];
                         }
                     }
                 },
                 //break;
                 WM_DWMCOMPOSITIONCHANGED => {
-                    self.defer_message(current_native_event_window, hwnd, msg, wparam, lparam);
+                    self.defer_message(&current_native_event_window, hwnd, msg, wparam, lparam, 0, 0, 0);
                 },
                 //break;
                 // Window focus and activation
                 WM_MOUSEACTIVATE => {
-                    self.defer_message(current_native_event_window, hwnd, msg, wparam, lparam);
+                    self.defer_message(&current_native_event_window, hwnd, msg, wparam, lparam, 0, 0, 0);
                 },
                 //break;
                 // Window focus and activation
                 WM_ACTIVATE => {
-                    self.defer_message(current_native_event_window, hwnd, msg, wparam, lparam);
+                    self.defer_message(&current_native_event_window, hwnd, msg, wparam, lparam, 0, 0, 0);
                 },
                 //break;
                 WM_ACTIVATEAPP => {
                     // When window activation changes we are not in a modal size loop
-                    bInModalSizeLoop = false;
-                    self.defer_message(current_native_event_window, hwnd, msg, wparam, lparam);
+                    self.in_modal_size_loop = false;
+                    self.defer_message(&current_native_event_window, hwnd, msg, wparam, lparam, 0, 0, 0);
                 },
                 //break;
                 WM_SETTINGCHANGE => {
                     // Convertible mode change
-                    if (!lparam.is_null() && (wcscmp(TEXT("ConvertibleSlateMode"), (TCHAR *)lparam) == 0)) {
-                        self.defer_message(current_native_event_window, hwnd, msg, wparam, lparam);
+                    let lparam_str: LPWSTR = unsafe {
+                        let lstr = mem::transmute::<LPARAM, LPWSTR>(lparam);
+                        lstr
+                    };
+                    if !lparam_str.is_null() {
+                        let mut length_counter = 0;
+                        loop {
+                            if *lparam_str.offset(length_counter) == 0 {
+                                break;
+                            }
+                            length_counter += 1;
+                        }
+                        length_counter += 1;
+                        let u16_str: Vec<u16> = Vec::from_raw_parts(lparam_str, length_counter as usize, length_counter as usize);
+                        let setting_str = String::from_utf16_lossy(&u16_str[..]);
+                        if &setting_str[..] == "ConvertibleSlateMode" {
+                            self.defer_message(&current_native_event_window, hwnd, msg, wparam, lparam, 0, 0, 0);
+                        }
                     }
                 },
                 //break;
                 WM_PAINT => {
-                    if bInModalSizeLoop && IsInGameThread() {
+                    if self.in_modal_size_loop && IsInGameThread() {
                         MessageHandler->OnOSPaint(current_native_event_window.ToSharedRef());
                     }
                 },
@@ -642,12 +684,12 @@ impl WindowsApplication {
                 },
                 //break;
                 WM_DESTROY => {
-                    self.windows.Remove(current_native_event_window);
+                    self.windows.remove(current_native_event_window);
                     return 0;
                 },
                 //break;
                 WM_CLOSE => {
-                    self.defer_message(current_native_event_window, hwnd, msg, wparam, lparam);
+                    self.defer_message(&current_native_event_window, hwnd, msg, wparam, lparam, 0, 0, 0);
                     return 0;
                 },
                 //break;
@@ -689,18 +731,18 @@ impl WindowsApplication {
                     FWindowSizeLimits SizeLimits = MessageHandler->GetSizeLimitsForWindow(current_native_event_window);
 
                     // We need to inflate the max values if using an OS window border
-                    int32 BorderWidth = 0;
-                    int32 BorderHeight = 0;
+                    let mut border_width: i32 = 0;
+                    let mut border_height: i32 = 0;
                     if current_native_event_window.get_definition().has_os_window_border {
                         let window_style = user32::GetWindowLongW(hwnd, GWL_STYLE);
                         let window_ex_style = user32::GetWindowLongW(hwnd, GWL_EXSTYLE);
 
                         // This adjusts a zero rect to give us the size of the border
                         let mut border_rect: RECT = mem::zeroed();
-                        user32::AdjustWindowRectEx(&mut border_rect, WindowStyle, false, WindowExStyle);
+                        user32::AdjustWindowRectEx(&mut border_rect, window_style, FALSE, window_ex_style);
 
-                        BorderWidth = BorderRect.right - BorderRect.left;
-                        BorderHeight = BorderRect.bottom - BorderRect.top;
+                        border_width = border_rect.right - border_rect.left;
+                        border_height = border_rect.bottom - border_rect.top;
                     }
 
                     // We always apply BorderWidth and BorderHeight since Slate always works with client area window sizes
@@ -714,37 +756,28 @@ impl WindowsApplication {
                 WM_NCLBUTTONDOWN |
                 WM_NCRBUTTONDOWN |
                 WM_NCMBUTTONDOWN => {
-                    match wparam {
-                        HTMINBUTTON => {
-                            if !MessageHandler->OnWindowAction( current_native_event_window, WindowAction::ClickedNonClientArea) {
-                                return 1;
-                            }
-                        },
-                        //break;
-                        HTMAXBUTTON => {
-                            if !MessageHandler->OnWindowAction( current_native_event_window, WindowAction::ClickedNonClientArea) {
-                                return 1;
-                            }
-                        },
-                        //break;
-                        HTCLOSE => {
-                            if !MessageHandler->OnWindowAction( current_native_event_window, WindowAction::ClickedNonClientArea) {
-                                return 1;
-                            }
-                        },
-                        //break;
-                        HTCAPTION => {
-                            if !MessageHandler->OnWindowAction( current_native_event_window, WindowAction::ClickedNonClientArea) {
-                                return 1;
-                            }
+                    if wparam == HTMINBUTTON as u64 {
+                        if !MessageHandler->OnWindowAction(current_native_event_window, WindowAction::ClickedNonClientArea) {
+                            return 1;
                         }
-                        //break;
+                    } else if wparam == HTMAXBUTTON as u64 {
+                        if !MessageHandler->OnWindowAction(current_native_event_window, WindowAction::ClickedNonClientArea) {
+                            return 1;
+                        }
+                    } else if wparam == HTCLOSE as u64 {
+                        if !MessageHandler->OnWindowAction(current_native_event_window, WindowAction::ClickedNonClientArea) {
+                            return 1;
+                        }
+                    } else if wparam == HTCAPTION as u64 {
+                        if !MessageHandler->OnWindowAction(current_native_event_window, WindowAction::ClickedNonClientArea) {
+                            return 1;
+                        }
                     }
                 },
                 //break;
                 WM_DISPLAYCHANGE => {
                     // Slate needs to know when desktop size changes.
-                    let mut display_metrics: DisplayMetrics::new();
+                    let mut display_metrics = DisplayMetrics::new();
                     BroadcastDisplayMetricsChanged(DisplayMetrics);
                 },
                 //break;
@@ -772,11 +805,155 @@ impl WindowsApplication {
                 },
             }
         }
-        user32::DefWindowProcW(hwnd, msg, wparam, lparam)
+        user32::DefWindowProcW(hwnd, msg, wparam, lparam) as i32
     }
     /*void FWindowsApplication::GetInitialDisplayMetrics( FDisplayMetrics& OutDisplayMetrics ) const {
         OutDisplayMetrics = InitialDisplayMetrics;
     }*/
+    fn defer_message(&self, native_window: &Rc<WindowsWindow>, hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPARAM, mouse_x: i32, mouse_y: i32, raw_input_flags: u32) {
+        if PUMPING_MESSAGE_OUTSIDE_OF_MAIN_LOOP && self.allowed_to_defer_message_processing {
+            self.deferred_messages.push(DeferredWindowsMessage::new(native_window, hwnd, message, wparam, lparam, mouse_x, mouse_y, raw_input_flags));
+        } else {
+            // When not deferring messages, process them immediately
+            self.process_deferred_message(DeferredWindowsMessage::new(native_window, hwnd, message, wparam, lparam, mouse_x, mouse_y, raw_input_flags));
+        }
+    }
+    fn pump_messages(&self, time_delta: f32) {
+        unsafe {
+            let mut message: MSG = mem::uninitialized();
+
+            // standard Windows message handling
+            while user32::PeekMessageW(&mut message, ptr::null_mut(), 0, 0, PM_REMOVE) != 0 { 
+                user32::TranslateMessage(&message);
+                user32::DispatchMessageW(&message); 
+            }
+        }
+    }
+    unsafe extern "system" fn app_wnd_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+        //ensure( IsInGameThread() );
+
+        (&*windows_application).process_message(hwnd, msg, wparam, lparam) as i64
+    }
+}
+
+fn get_monitor_size_from_edid(h_dev_reg_key: RegKey, out_width: &mut i32, out_height: &mut i32) -> bool {
+    for (name, value) in h_dev_reg_key.enum_values().map(|x| x.unwrap()) {
+        if &name[..] != "EDID" {
+            continue;
+        } else {
+            // EDID data format documented here:
+            // http://en.wikipedia.org/wiki/EDID
+
+            let mut detail_timing_descriptor_start_index: usize = 54;
+            *out_width = (((value.bytes[detail_timing_descriptor_start_index + 4] >> 4) << 8) | value.bytes[detail_timing_descriptor_start_index + 2]) as i32;
+            *out_height = (((value.bytes[detail_timing_descriptor_start_index + 7] >> 4) << 8) | value.bytes[detail_timing_descriptor_start_index + 5]) as i32;
+
+            return true; // valid EDID found
+        }
+    }
+
+    false
+}
+
+fn get_size_for_dev_id(target_dev_id: &String, width: &mut i32, height: &mut i32) -> bool {
+    unsafe {
+        let dev_info: HDEVINFO = setupapi::SetupDiGetClassDevsExW(
+            &GUID_DEVCLASS_MONITOR, //class GUID
+            ptr::null_mut(),
+            ptr::null_mut(),
+            DIGCF_PRESENT,
+            ptr::null_mut(),
+            ptr::null_mut(),
+            ptr::null_mut()
+        );
+
+        if dev_info.is_null() {
+            return false;
+        }
+
+        let res: bool = false;
+        let mut monitor_index = 0;
+        loop {
+            let err = Error::last_os_error();
+            if err.raw_os_error().unwrap() == ERROR_NO_MORE_ITEMS as i32 { break; }
+            let mut dev_info_data: SP_DEVINFO_DATA = mem::uninitialized();
+            dev_info_data.cbSize = mem::size_of::<SP_DEVINFO_DATA>() as u32;
+
+            if setupapi::SetupDiEnumDeviceInfo(dev_info, monitor_index, &mut dev_info_data) == TRUE {
+                let mut buffer = [0u16; MAX_DEVICE_ID_LEN];
+                if setupapi::CM_Get_Device_IDW(dev_info_data.DevInst, buffer.as_mut_ptr(), MAX_DEVICE_ID_LEN as u32, 0) == CR_SUCCESS {
+                    let dev_id = String::from_utf16_lossy(&buffer[..]);
+                    let idx = &dev_id[9..].find("\\").unwrap();
+                    dev_id = dev_id[8..idx - 8].to_string();
+                    if &dev_id[..] == &target_dev_id[..] {
+                        let mut h_dev_reg_key: HKEY = setupapi::SetupDiOpenDevRegKey(dev_info, &mut dev_info_data, DICS_FLAG_GLOBAL, 0, DIREG_DEV, KEY_READ);
+
+                        if !h_dev_reg_key.is_null() && h_dev_reg_key != INVALID_HANDLE_VALUE as HKEY {
+                            res = get_monitor_size_from_edid(RegKey::predef(h_dev_reg_key), width, height);
+                            //advapi32::RegCloseKey(h_dev_reg_key);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        if setupapi::SetupDiDestroyDeviceInfoList(dev_info) == FALSE {
+            res = false;
+        }
+
+        res
+    }
+}
+
+fn get_monitor_info(out_monitor_info: &Vec<MonitorInfo>) {
+    unsafe {
+        let mut display_device: DISPLAY_DEVICEW = mem::uninitialized();
+        display_device.cb = mem::size_of::<DISPLAY_DEVICEW>() as u32;
+        let mut device_index: DWORD = 0; // device index
+
+        let primary_device: *mut MonitorInfo = ptr::null_mut();
+        out_monitor_info.reserve(2); // Reserve two slots, as that will be the most common maximum
+
+        while user32::EnumDisplayDevicesW(0 as *const u16, device_index, &mut display_device, 0) != 0 {
+            if display_device.StateFlags & DISPLAY_DEVICE_ATTACHED_TO_DESKTOP > 0 {
+                let mut monitor: DISPLAY_DEVICEW = mem::uninitialized();
+                monitor.cb = mem::size_of::<DISPLAY_DEVICEW>() as u32;
+                let mut monitor_index: DWORD = 0;
+
+                while user32::EnumDisplayDevicesW(display_device.DeviceName.as_ptr(), monitor_index, &mut monitor, 0) != 0 {
+                    if (monitor.StateFlags & DISPLAY_DEVICE_ACTIVE != 0) && (monitor.StateFlags & DISPLAY_DEVICE_MIRRORING_DRIVER == 0) {
+                        let mut info: MonitorInfo = mem::uninitialized();
+
+                        let temp_str = String::from_utf16_lossy(&monitor.DeviceID[..]);
+                        let idx = &temp_str[9..].find("\\").unwrap();
+                        info.name.push_str(&temp_str[8..idx - 8]);
+                        info.id = temp_str;
+                        //info.name = info.id.Mid (8, Info.ID.Find (TEXT("\\"), ESearchCase::CaseSensitive, ESearchDir::FromStart, 9) - 8);
+
+                        if get_size_for_dev_id(&info.name, &mut info.native_width, &mut info.native_height) {
+                            let temp_str = String::from_utf16_lossy(&monitor.DeviceID[..]);
+                            info.id = temp_str;
+                            info.is_primary = (display_device.StateFlags & DISPLAY_DEVICE_PRIMARY_DEVICE) > 0;
+                            out_monitor_info.push(info);
+
+                            if primary_device.is_null() && info.is_primary {
+                                primary_device = &mut out_monitor_info[out_monitor_info.len()];
+                            }
+                        }
+                    }
+                    monitor_index += 1;
+
+                    monitor = mem::zeroed();
+                    monitor.cb = mem::size_of::<DISPLAY_DEVICEW>() as u32;
+                }
+            }
+
+            display_device = mem::zeroed();
+            display_device.cb = mem::size_of::<DISPLAY_DEVICEW>() as u32;
+            device_index += 1;
+        }
+    }
 }
 
 //TODO this struct has cross-platform applications, so it shouldn't be implemented within the Windows-specific files. 
@@ -787,9 +964,9 @@ pub struct DisplayMetrics {
     primary_display_work_area_rect: PlatformRect,
     virtual_display_rect: PlatformRect,
     //TODO: The following should be a Vector2D
-    title_safe_padding_size: (i32, i32),
+    title_safe_padding_size: (f32, f32),
     //TODO: The following should be a Vector2D
-    action_safe_padding_size: (i32, i32),
+    action_safe_padding_size: (f32, f32),
 }
 
 impl DisplayMetrics {
@@ -802,7 +979,7 @@ impl DisplayMetrics {
 
             // Get the screen rect of the primary monitor, excluding taskbar etc.
             let mut work_area_rect: RECT = mem::zeroed();
-            if !user32::SystemParametersInfo(SPI_GETWORKAREA, 0, &mut work_area_rect, 0) {
+            if user32::SystemParametersInfoW(SPI_GETWORKAREA, 0, mem::transmute(&mut work_area_rect), 0) == 0 {
                 work_area_rect.top = 0;
                 work_area_rect.bottom = 0;
                 work_area_rect.left = 0;
@@ -821,10 +998,30 @@ impl DisplayMetrics {
             out_display_metrics.virtual_display_rect.bottom = out_display_metrics.virtual_display_rect.top + user32::GetSystemMetrics(SM_CYVIRTUALSCREEN);
 
             // Get connected monitor information
-            user32::GetMonitorInfo(out_display_metrics.monitor_info);
+            get_monitor_info(&mut out_display_metrics.monitor_info);
 
             // Apply the debug safe zones
-            out_display_metrics.ApplyDefaultSafeZones();
+            out_display_metrics.apply_default_safe_zones();
+            out_display_metrics
+        }
+    }
+    pub fn get_debug_title_safe_zone_ratio(&self) -> f32 {
+        DEBUG_SAFE_ZONE_RATIO
+    }
+    pub fn get_debug_action_safe_zone_ratio(&self) -> f32 {
+        DEBUG_ACTION_ZONE_RATIO
+    }
+    pub fn apply_default_safe_zones(&mut self) {
+        let safe_zone_ratio = self.get_debug_title_safe_zone_ratio();
+        if safe_zone_ratio < 1.0 {
+            let half_unsafe_ratio = (1.0 - safe_zone_ratio) * 0.5;
+            self.title_safe_padding_size = (self.primary_display_width as f32 * half_unsafe_ratio, self.primary_display_height as f32 * half_unsafe_ratio);
+        }
+
+        let action_safe_zone_ratio = self.get_debug_action_safe_zone_ratio();
+        if action_safe_zone_ratio < 1.0 {
+            let half_unsafe_ratio = (1.0 - action_safe_zone_ratio) * 0.5;
+            self.action_safe_padding_size = (self.primary_display_width as f32 * half_unsafe_ratio, self.primary_display_height as f32 * half_unsafe_ratio);
         }
     }
 }

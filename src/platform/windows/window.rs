@@ -340,6 +340,7 @@ impl WindowsWindow {
             };
 		}
 	}
+	pub fn get_aspect_ratio(&self) -> f32 { self.aspect_ratio }
 	/*pub unsafe extern "system" fn query_interface(iid: REFIID, ppvObject: *mut *mut c_void) {
 		//let mut mut_self: *mut c_void = ptr::null_mut();
 		//let mut_self = &mut *(mut_self as *mut Self);

@@ -1,5 +1,9 @@
+use cgmath::{Vector2, Vector3};
 use platform::generic::window::GenericWindow;
 use std::rc::Rc;
+
+type FloatVec2 = Vector2<f32>;
+type FloatVec3 = Vector3<f32>;
 
 pub enum MouseButtons {
 	Left = 0,
@@ -158,13 +162,13 @@ pub trait ApplicationMessageHandler {
     fn on_key_down(&self, key_code: i32, character_code: u32, is_repeat: bool) -> bool;
     fn on_key_up(&self, key_code: i32, character_code: u32, is_repeat: bool) -> bool;
     fn on_mouse_down(&self, window: Rc<GenericWindow>, button: MouseButtons) -> bool;
-    fn on_mouse_down_with_cursor_pos(&self, window: Rc<GenericWindow>, button: MouseButtons, cursor_pos: (i32, i32)) -> bool;
+    fn on_mouse_down_with_cursor_pos(&self, window: Rc<GenericWindow>, button: MouseButtons, cursor_pos: FloatVec2) -> bool;
     fn on_mouse_up(&self, button: MouseButtons) -> bool;
-    fn on_mouse_up_with_cursor_pos(&self, button: MouseButtons, cursor_pos: (i32, i32)) -> bool;
+    fn on_mouse_up_with_cursor_pos(&self, button: MouseButtons, cursor_pos: FloatVec2) -> bool;
     fn on_mouse_double_click(&self, window: Rc<GenericWindow>, button: MouseButtons) -> bool;
-    fn on_mouse_double_click_with_cursor_pos(&self, window: Rc<GenericWindow>, button: MouseButtons, cursor_pos: (i32, i32)) -> bool;
+    fn on_mouse_double_click_with_cursor_pos(&self, window: Rc<GenericWindow>, button: MouseButtons, cursor_pos: FloatVec2) -> bool;
     fn on_mouse_wheel(&self, delta: f32) -> bool;
-    fn on_mouse_wheel_with_cursor_pos(&self, delta: f32, cursor_pos: (i32, i32)) -> bool;
+    fn on_mouse_wheel_with_cursor_pos(&self, delta: f32, cursor_pos: FloatVec2) -> bool;
     fn on_mouse_move(&self) -> bool;
     fn on_raw_mouse_move(&self, x: i32, y: i32) -> bool;
     fn on_cursor_set(&self) -> bool;
@@ -172,12 +176,12 @@ pub trait ApplicationMessageHandler {
     fn on_controller_button_pressed(&self, key_name: GamepadKeyNames, controller_id: i32, is_repeat: bool) -> bool;
     fn on_controller_button_released(&self, key_name: GamepadKeyNames, controller_id: i32, is_repeat: bool) -> bool;
     fn on_begin_gesture(&self);
-    fn on_touch_gesture(&self, gesture_type: GestureEvent, delta: (i32, i32), wheel_delta: f32, is_direction_inverted_from_device: bool) -> bool;
+    fn on_touch_gesture(&self, gesture_type: GestureEvent, delta: FloatVec2, wheel_delta: f32, is_direction_inverted_from_device: bool) -> bool;
     fn on_end_gesture(&self);
-    fn on_touch_started(&self, window: Rc<GenericWindow>, location: (i32, i32), touch_index: i32, controller_id: i32) -> bool;
-    fn on_touch_moved(&self, location: (i32, i32), touch_index: i32, controller_id: i32) -> bool;
-    fn on_touch_ended(&self, location: (i32, i32), touch_index: i32, controller_id: i32) -> bool;
-    fn on_motion_detected(&self, tilt: (i32, i32, i32), rotation_rate: (i32, i32, i32), gravity: (i32, i32, i32), acceleration: (i32, i32, i32), controller_id: i32) -> bool;
+    fn on_touch_started(&self, window: Rc<GenericWindow>, location: FloatVec2, touch_index: i32, controller_id: i32) -> bool;
+    fn on_touch_moved(&self, location: FloatVec2, touch_index: i32, controller_id: i32) -> bool;
+    fn on_touch_ended(&self, location: FloatVec2, touch_index: i32, controller_id: i32) -> bool;
+    fn on_motion_detected(&self, tilt: FloatVec3, rotation_rate: FloatVec3, gravity: FloatVec3, acceleration: FloatVec3, controller_id: i32) -> bool;
     fn on_size_changed(&self, window: Rc<GenericWindow>, width: i32, height: i32, was_minimized: bool) -> bool;
     fn on_os_paint(&self, window: Rc<GenericWindow>);
     fn get_size_limits_for_window(&self, window: Rc<GenericWindow>) -> WindowSizeLimits;

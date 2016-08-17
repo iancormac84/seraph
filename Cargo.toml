@@ -3,6 +3,12 @@ name = "windowmaker"
 version = "0.1.0"
 authors = ["iancormac84 <wilnathan@gmail.com>"]
 
+#[dependencies.advapi32-sys]
+#path = "E:/Devel/resources/winapi-rs/lib/advapi32"
+
+[dependencies.cgmath]
+path = "E:/Devel/resources/cgmath"
+
 [dependencies.dwmapi-sys]
 path = "E:/Devel/resources/winapi-rs/lib/dwmapi"
 
@@ -11,6 +17,9 @@ path = "E:/Devel/resources/winapi-rs/lib/gdi32"
 
 [dependencies.ole32-sys]
 path = "E:/Devel/resources/winapi-rs/lib/ole32"
+
+[dependencies.setupapi-sys]
+path = "E:/Devel/resources/winapi-rs/lib/setupapi"
 
 [dependencies.user32-sys]
 path = "E:/Devel/resources/winapi-rs/lib/user32"
@@ -23,3 +32,5 @@ path = "E:/Devel/resources/winapi-rs"
 
 [dependencies]
 bitflags = "*"
+lazy_static = "*"
+winreg = "*"
