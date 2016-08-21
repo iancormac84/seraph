@@ -1,15 +1,18 @@
 use cgmath::Point2;
 use dwmapi;
-use platform::generic::application::{MonitorInfo, PlatformRect, DEBUG_ACTION_ZONE_RATIO, DEBUG_SAFE_ZONE_RATIO};
-use platform::generic::application_message_handler::WindowZone;
+use platform::generic::application::{GenericApplication, MonitorInfo, PlatformRect, DEBUG_ACTION_ZONE_RATIO, DEBUG_SAFE_ZONE_RATIO};
+use platform::generic::application_message_handler::{ApplicationMessageHandler, WindowAction, WindowSizeLimits, WindowZone};
 use platform::generic::cursor::ICursor;
 use platform::generic::window::GenericWindow;
 use platform::generic::window_definition::{WindowDefinition, WindowTransparency, WindowType};
-use platform::windows::window::WindowsWindow;
+use platform::windows::cursor::WindowsCursor;
+use platform::windows::window::{APP_WINDOW_CLASS, WindowsWindow};
 use setupapi;
 use std::collections::BTreeMap;
+use std::ffi::OsStr;
 use std::io::Error;
 use std::os::raw::c_void;
+use std::os::windows::ffi::OsStrExt;
 use std::{mem, ptr};
 use std::rc::{Rc, Weak};
 use user32;
@@ -24,10 +27,11 @@ use winapi::{
     LPVOID, LPWSTR, LRESULT,
     MAX_DEVICE_ID_LEN, MINMAXINFO, MONITORINFO, MONITOR_DEFAULTTONEAREST, MOUSE_MOVE_ABSOLUTE, MOUSE_MOVE_RELATIVE, MSG, NCCALCSIZE_PARAMS, PM_REMOVE, POINT, POINTL, RAWINPUT, RAWINPUTDEVICE, RAWINPUTHEADER,
     RECT, RIDEV_REMOVE, RID_INPUT, RIM_TYPEMOUSE, SM_CXSCREEN,
-    SM_CYSCREEN, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SP_DEVINFO_DATA, SPI_GETWORKAREA, SW_RESTORE, TRUE, VK_F4, VK_SPACE, WINDOWINFO, WM_IME_CHAR,
-    WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION, WM_IME_NOTIFY, WM_IME_REQUEST, WM_IME_SETCONTEXT, WM_IME_STARTCOMPOSITION, WM_INPUTLANGCHANGE, WM_INPUTLANGCHANGEREQUEST, WM_KEYDOWN, WM_KEYUP,
-    WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDBLCLK, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCLBUTTONDOWN, WM_NCMBUTTONDOWN, WM_NCMOUSEMOVE,
-    WM_NCRBUTTONDOWN, WM_RBUTTONDBLCLK, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SYSKEYUP, WM_XBUTTONDBLCLK, WM_XBUTTONDOWN, WM_XBUTTONUP, WMSZ_BOTTOM, WMSZ_BOTTOMLEFT, WMSZ_BOTTOMRIGHT, WMSZ_LEFT,
+    SM_CYSCREEN, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SP_DEVINFO_DATA, SPI_GETWORKAREA, SW_RESTORE, TRUE, VK_F4, VK_SPACE, WINDOWINFO, WM_CHAR,
+    WM_INPUT, WM_INPUT_DEVICE_CHANGE, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDBLCLK, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEHOVER, WM_MOUSEHWHEEL,
+    WM_MOUSELEAVE, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCMOUSEHOVER, WM_NCMOUSELEAVE, WM_NCMOUSEMOVE, WM_NCMBUTTONDBLCLK, WM_NCMBUTTONDOWN, WM_NCMBUTTONUP, WM_NCRBUTTONDBLCLK, WM_NCRBUTTONDOWN, WM_NCRBUTTONUP, WM_NCXBUTTONDBLCLK, WM_NCXBUTTONDOWN, WM_NCXBUTTONUP, WM_XBUTTONDBLCLK, WM_XBUTTONDOWN, WM_XBUTTONUP, WM_SYSCHAR,
+    WM_SYSKEYDOWN, WM_SYSCOMMAND, WM_IME_CHAR,
+    WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION, WM_IME_NOTIFY, WM_IME_REQUEST, WM_IME_SETCONTEXT, WM_IME_STARTCOMPOSITION, WM_INPUTLANGCHANGE, WM_INPUTLANGCHANGEREQUEST, WM_NCLBUTTONDOWN, WM_RBUTTONDBLCLK, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SYSKEYUP, WMSZ_BOTTOM, WMSZ_BOTTOMLEFT, WMSZ_BOTTOMRIGHT, WMSZ_LEFT,
     WMSZ_RIGHT, WMSZ_TOP, WMSZ_TOPLEFT, WMSZ_TOPRIGHT, WNDCLASSW, WPARAM, WVR_VALIDRECTS
 };
 use winreg::RegKey;
@@ -209,6 +213,7 @@ pub struct WindowsApplication {
     deferred_messages: Vec<DeferredWindowsMessage>,
     deferred_drag_drop_operations: Vec<DeferredWindowsDragDropOperation>,
     message_handlers: Vec<Box<IWindowsMessageHandler>>,
+    message_handler: Rc<ApplicationMessageHandler>,
     windows: Vec<Rc<WindowsWindow>>,
     in_modal_size_loop: bool,
     allowed_to_defer_message_processing: bool,
@@ -238,7 +243,7 @@ impl WindowsApplication {
             wc.hCursor = ptr::null_mut();  // We manage the cursor ourselves
             wc.hbrBackground = ptr::null_mut(); // Transparent
             wc.lpszMenuName = ptr::null_mut();
-            wc.lpszClassName = WindowsWindow::app_window_class;
+            wc.lpszClassName = OsStr::new(APP_WINDOW_CLASS).encode_wide().chain(Some(0).into_iter()).collect::<Vec<u16>>().as_ptr();
         }
     }
 	pub fn get_window_transparency_support(&self) -> WindowTransparency {
@@ -582,7 +587,7 @@ impl WindowsApplication {
 
                     // Only cache the screen position if its not minimized
                     if FWindowsApplication::MinimizedWindowPosition != new_position {
-                        MessageHandler->OnMovedWindow(current_native_event_window, new_x, new_y);
+                        self.message_handler.on_moved_window(mem::transmute(&current_native_event_window), new_x, new_y);
 
                         return 0;
                     }
@@ -599,9 +604,9 @@ impl WindowsApplication {
                         if current_native_event_window.is_regular_window() {
                             let mut zone: WindowZone = mem::uninitialized();
                     
-                            if MessageHandler->ShouldProcessUserInputMessages(current_native_event_window) {
+                            if self.message_handler.should_process_user_input_messages(mem::transmute(&current_native_event_window)) {
                                 // Assumes this is not allowed to leave Slate or touch rendering
-                                zone = MessageHandler->GetWindowZoneForPoint(current_native_event_window, local_mouse_x, local_mouse_y);
+                                zone = self.message_handler.get_window_zone_for_point(mem::transmute(&current_native_event_window), local_mouse_x, local_mouse_y);
                             } else {
                                 // Default to client area so that we are able to see the feedback effect when attempting to click on a non-modal window when a modal window is active
                                 // Any other window zones could have side effects and NotInWindow prevents the feedback effect.
@@ -658,7 +663,7 @@ impl WindowsApplication {
                 //break;
                 WM_PAINT => {
                     if self.in_modal_size_loop && IsInGameThread() {
-                        MessageHandler->OnOSPaint(current_native_event_window.ToSharedRef());
+                        self.message_handler.on_os_paint(mem::transmute(&current_native_event_window));
                     }
                 },
                 //break;
@@ -702,20 +707,20 @@ impl WindowsApplication {
                                 user32::ShowWindow(hwnd, SW_RESTORE);
                                 return 0;
                             } else {
-                                if !MessageHandler->OnWindowAction( current_native_event_window, WindowAction::Restore) {
+                                if !self.message_handler.on_window_action(mem::transmute(&current_native_event_window), WindowAction::Restore) {
                                     return 1;
                                 }
                             }
                         },
                         //break;
                         SC_MAXIMIZE => {
-                            if !MessageHandler->OnWindowAction( current_native_event_window, WindowAction::Maximize) {
+                            if !self.message_handler.on_window_action(mem::transmute(&current_native_event_window), WindowAction::Maximize) {
                                 return 1;
                             }
                         },
                         //break;
                         default => {
-                            if !MessageHandler->ShouldProcessUserInputMessages( current_native_event_window ) && IsInputMessage( msg ) {
+                            if !self.message_handler.should_process_user_input_messages(mem::transmute(&current_native_event_window)) && self.is_input_message(msg) {
                                 return 0;
                             }
                         }
@@ -728,7 +733,7 @@ impl WindowsApplication {
                         let mmi = mem::transmute::<LPARAM, *const MINMAXINFO>(lparam);
                         *mmi
                     };
-                    FWindowSizeLimits SizeLimits = MessageHandler->GetSizeLimitsForWindow(current_native_event_window);
+                    let size_limits: WindowSizeLimits = self.message_handler.get_size_limits_for_window(mem::transmute(&current_native_event_window));
 
                     // We need to inflate the max values if using an OS window border
                     let mut border_width: i32 = 0;
@@ -739,17 +744,17 @@ impl WindowsApplication {
 
                         // This adjusts a zero rect to give us the size of the border
                         let mut border_rect: RECT = mem::zeroed();
-                        user32::AdjustWindowRectEx(&mut border_rect, window_style, FALSE, window_ex_style);
+                        user32::AdjustWindowRectEx(&mut border_rect, window_style as u32, FALSE, window_ex_style as u32);
 
                         border_width = border_rect.right - border_rect.left;
                         border_height = border_rect.bottom - border_rect.top;
                     }
 
                     // We always apply BorderWidth and BorderHeight since Slate always works with client area window sizes
-                    min_max_info.ptMinTrackSize.x = FMath::RoundToInt( SizeLimits.GetMinWidth().Get(min_max_info.ptMinTrackSize.x));
-                    min_max_info.ptMinTrackSize.y = FMath::RoundToInt( SizeLimits.GetMinHeight().Get(min_max_info.ptMinTrackSize.y));
-                    min_max_info.ptMaxTrackSize.x = FMath::RoundToInt( SizeLimits.GetMaxWidth().Get(min_max_info.ptMaxTrackSize.x) ) + BorderWidth;
-                    min_max_info.ptMaxTrackSize.y = FMath::RoundToInt( SizeLimits.GetMaxHeight().Get(min_max_info.ptMaxTrackSize.y) ) + BorderHeight;
+                    min_max_info.ptMinTrackSize.x = FMath::RoundToInt(size_limits.GetMinWidth().Get(min_max_info.ptMinTrackSize.x));
+                    min_max_info.ptMinTrackSize.y = FMath::RoundToInt(size_limits.GetMinHeight().Get(min_max_info.ptMinTrackSize.y));
+                    min_max_info.ptMaxTrackSize.x = FMath::RoundToInt(size_limits.GetMaxWidth().Get(min_max_info.ptMaxTrackSize.x)) + border_width;
+                    min_max_info.ptMaxTrackSize.y = FMath::RoundToInt(size_limits.GetMaxHeight().Get(min_max_info.ptMaxTrackSize.y)) + border_height;
                     return 0;
                 },
                 //break;
@@ -757,19 +762,19 @@ impl WindowsApplication {
                 WM_NCRBUTTONDOWN |
                 WM_NCMBUTTONDOWN => {
                     if wparam == HTMINBUTTON as u64 {
-                        if !MessageHandler->OnWindowAction(current_native_event_window, WindowAction::ClickedNonClientArea) {
+                        if !self.message_handler.on_window_action(mem::transmute(&current_native_event_window), WindowAction::ClickedNonClientArea) {
                             return 1;
                         }
                     } else if wparam == HTMAXBUTTON as u64 {
-                        if !MessageHandler->OnWindowAction(current_native_event_window, WindowAction::ClickedNonClientArea) {
+                        if !self.message_handler.on_window_action(mem::transmute(&current_native_event_window), WindowAction::ClickedNonClientArea) {
                             return 1;
                         }
                     } else if wparam == HTCLOSE as u64 {
-                        if !MessageHandler->OnWindowAction(current_native_event_window, WindowAction::ClickedNonClientArea) {
+                        if !self.message_handler.on_window_action(mem::transmute(&current_native_event_window), WindowAction::ClickedNonClientArea) {
                             return 1;
                         }
                     } else if wparam == HTCAPTION as u64 {
-                        if !MessageHandler->OnWindowAction(current_native_event_window, WindowAction::ClickedNonClientArea) {
+                        if !self.message_handler.on_window_action(mem::transmute(&current_native_event_window), WindowAction::ClickedNonClientArea) {
                             return 1;
                         }
                     }
@@ -793,13 +798,13 @@ impl WindowsApplication {
                     XInput->SetNeedsControllerStateUpdate(); 
                     QueryConnectedMice();
                 },
-                default => {
+                _ => {
                     let mut handler_result: i32 = 0;
 
                     // give others a chance to handle unprocessed messages
-                    for (auto Handler : MessageHandlers) {
-                        if Handler->ProcessMessage(hwnd, msg, wparam, lparam, handler_result) {
-                            return HandlerResult;
+                    for handler in self.message_handlers {
+                        if handler.process_message(hwnd, msg, wparam, lparam, handler_result) {
+                            return handler_result;
                         }
                     }
                 },
@@ -818,6 +823,52 @@ impl WindowsApplication {
             self.process_deferred_message(DeferredWindowsMessage::new(native_window, hwnd, message, wparam, lparam, mouse_x, mouse_y, raw_input_flags));
         }
     }
+    fn is_keyboard_input_message(&self, msg: u32) -> bool {
+        match msg {
+            // Keyboard input notification messages...
+            WM_CHAR | WM_SYSCHAR | WM_SYSKEYDOWN | WM_KEYDOWN | WM_SYSKEYUP | WM_KEYUP | WM_SYSCOMMAND => { true },
+            _ => { false }
+        }
+    }
+    fn is_mouse_input_message(&self, msg: u32) -> bool {
+        match msg {
+            // Mouse input notification messages...
+            WM_MOUSEHWHEEL | WM_MOUSEWHEEL | WM_MOUSEHOVER | WM_MOUSELEAVE | WM_MOUSEMOVE | WM_NCMOUSEHOVER | WM_NCMOUSELEAVE | WM_NCMOUSEMOVE |
+            WM_NCMBUTTONDBLCLK | WM_NCMBUTTONDOWN | WM_NCMBUTTONUP | WM_NCRBUTTONDBLCLK | WM_NCRBUTTONDOWN | WM_NCRBUTTONUP | WM_NCXBUTTONDBLCLK |
+            WM_NCXBUTTONDOWN | WM_NCXBUTTONUP | WM_LBUTTONDBLCLK | WM_LBUTTONDOWN | WM_LBUTTONUP | WM_MBUTTONDBLCLK | WM_MBUTTONDOWN | WM_MBUTTONUP |
+            WM_RBUTTONDBLCLK | WM_RBUTTONDOWN | WM_RBUTTONUP | WM_XBUTTONDBLCLK | WM_XBUTTONDOWN | WM_XBUTTONUP => { true },
+            _ => { false }
+        }
+    }
+    fn is_input_message(&self, msg: u32) -> bool {
+        if self.is_keyboard_input_message(msg) || self.is_mouse_input_message(msg) {
+            return true;
+        }
+
+        match msg {
+            // Raw input notification messages...
+            WM_INPUT | WM_INPUT_DEVICE_CHANGE => { true },
+            _ => { false }
+        }
+    }
+}
+
+unsafe extern "system" fn app_wnd_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    //ensure( IsInGameThread() );
+
+    (&*windows_application).process_message(hwnd, msg, wparam, lparam) as i64
+}
+
+impl GenericApplication for WindowsApplication {
+    type Cursor = WindowsCursor;
+    type Window = WindowsWindow;
+
+    fn set_message_handler(&mut self, in_message_handler: &Rc<ApplicationMessageHandler>) {
+        self.message_handler = *in_message_handler;
+    }
+    fn get_message_handler(&self) -> Rc<ApplicationMessageHandler> {
+        self.message_handler
+    }
     fn pump_messages(&self, time_delta: f32) {
         unsafe {
             let mut message: MSG = mem::uninitialized();
@@ -828,11 +879,6 @@ impl WindowsApplication {
                 user32::DispatchMessageW(&message); 
             }
         }
-    }
-    unsafe extern "system" fn app_wnd_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
-        //ensure( IsInGameThread() );
-
-        (&*windows_application).process_message(hwnd, msg, wparam, lparam) as i64
     }
 }
 

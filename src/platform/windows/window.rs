@@ -38,6 +38,8 @@ pub trait DropTarget {
     fn drop(&mut self, pDataObj: *const IDataObject, grfKeyState: DWORD, pt: POINTL, pdwEffect: *mut DWORD) -> HRESULT;
 }
 
+pub const APP_WINDOW_CLASS: &'static str = "CormacWindow";
+
 //TODO can I make this capable of clone? I want to try this so I don't have to do a clone in the WindowsApplication::find_window_by_hwnd method.
 pub struct WindowsWindow {
 	pub app_window_class: &'static str,
@@ -64,7 +66,7 @@ impl WindowsWindow {
 		    wnd_plcment.length = mem::size_of::<WINDOWPLACEMENT>() as u32;
 		    wnd_plcment1.length = mem::size_of::<WINDOWPLACEMENT>() as u32;
 		    WindowsWindow {
-			    app_window_class: "CormacWindow",
+			    app_window_class: APP_WINDOW_CLASS,
 			    owning_application: mem::uninitialized(),
 		        hwnd: ptr::null_mut(),
                 region_height: mem::uninitialized(),

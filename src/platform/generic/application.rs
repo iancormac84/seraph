@@ -1,4 +1,7 @@
+use platform::generic::application_message_handler::ApplicationMessageHandler;
 use platform::generic::cursor::ICursor;
+use platform::generic::window::GenericWindow;
+use std::boxed::Box;
 use std::rc::Rc;
 
 pub static mut DEBUG_SAFE_ZONE_RATIO: f32 = 1.0;
@@ -54,16 +57,16 @@ pub enum WindowTitleAlignment {
 	Right,
 }
 
-pub struct GenericApplication {
-	cursor: Rc<ICursor>,
-	message_handler: Rc<Box<ApplicationMessageHandler>>,
-}
+pub trait GenericApplication {
+	type Cursor: ICursor;
+	type Window: GenericWindow;
 
-impl GenericApplication {
-	pub fn new(cursor: &Rc<ICursor>) -> GenericApplication {
-        GenericApplication {
-        	cursor: *cursor,
-        	message_handler: 
-        }
-	}
+	fn set_message_handler(&mut self, in_message_handler: &Rc<ApplicationMessageHandler>);
+	fn get_message_handler(&self) -> Rc<ApplicationMessageHandler>;
+	//fn poll_game_device_state(&self, time_delta: f32);
+    fn pump_messages(&self, time_delta: f32);
+    //fn process_deferred_events(&self, time_delta: f32);
+    //fn tick(&self, time_delta: f32);
+    //fn make_window(&self) -> Rc<Self::Window>;
+
 }
