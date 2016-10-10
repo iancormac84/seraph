@@ -24,6 +24,20 @@ pub struct WindowSizeLimits {
 	max_height: Option<f32>,
 }
 
+impl WindowSizeLimits {
+    pub fn set_min_width(&mut self, in_value: Option<f32>) -> &WindowSizeLimits { self.min_width = in_value; self }
+    pub fn get_min_width(&self) -> Option<f32> { self.min_width }
+
+    pub fn set_min_height(&mut self, in_value: Option<f32>) -> &WindowSizeLimits { self.min_height = in_value; self }
+    pub fn get_min_height(&self) -> Option<f32> { self.min_height }
+
+    pub fn set_max_width(&mut self, in_value: Option<f32>) -> &WindowSizeLimits { self.max_width = in_value; self }
+    pub fn get_max_width(&self) -> Option<f32> { self.max_width }
+
+    pub fn set_max_height(&mut self, in_value: Option<f32>) -> &WindowSizeLimits { self.max_height = in_value; self }
+    pub fn get_max_height(&self) -> Option<f32> { self.max_height }
+}
+
 pub struct GamepadKeyNames(pub &'static str);
 pub const INVALID: GamepadKeyNames = GamepadKeyNames("");
 pub const LEFT_ANALOG_X: GamepadKeyNames = GamepadKeyNames("Gamepad_LeftX");
@@ -110,24 +124,45 @@ pub enum WindowActivation {
 }
 
 pub enum WindowZone {
-	NotInWindow			= 0,
-	TopLeftBorder		= 1,
-	TopBorder			= 2,
-	TopRightBorder		= 3,
-	LeftBorder			= 4,
-	ClientArea			= 5,
-	RightBorder			= 6,
-	BottomLeftBorder	= 7,
-	BottomBorder		= 8,
-	BottomRightBorder	= 9,
-	TitleBar			= 10,
-	MinimizeButton		= 11,
-	MaximizeButton		= 12,
-	CloseButton			= 13,
-	SysMenu				= 14,
-
+	NotInWindow,
+	TopLeftBorder,
+	TopBorder,
+	TopRightBorder,
+	LeftBorder,
+	ClientArea,
+	RightBorder,
+	BottomLeftBorder,
+	BottomBorder,
+	BottomRightBorder,
+	TitleBar,
+	MinimizeButton,
+	MaximizeButton,
+	CloseButton,
+	SysMenu,
 	/* No zone specified
 	Unspecified	= 0,*/
+}
+
+impl WindowZone {
+    pub fn to_usize(&self) -> usize {
+        match *self {
+            WindowZone::NotInWindow => 0,
+            WindowZone::TopLeftBorder => 1,
+            WindowZone::TopBorder => 2,
+            WindowZone::TopRightBorder => 3,
+            WindowZone::LeftBorder => 4,
+            WindowZone::ClientArea => 5,
+            WindowZone::RightBorder => 6,
+            WindowZone::BottomLeftBorder => 7,
+            WindowZone::BottomBorder => 8,
+            WindowZone::BottomRightBorder => 9,
+            WindowZone::TitleBar => 10,
+            WindowZone::MinimizeButton => 11,
+            WindowZone::MaximizeButton => 12,
+            WindowZone::CloseButton => 13,
+            WindowZone::SysMenu => 14,
+        }
+    }
 }
 
 pub enum WindowAction {

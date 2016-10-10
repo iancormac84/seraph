@@ -41,6 +41,7 @@ pub trait DropTarget {
 pub const APP_WINDOW_CLASS: &'static str = "CormacWindow";
 
 //TODO can I make this capable of clone? I want to try this so I don't have to do a clone in the WindowsApplication::find_window_by_hwnd method.
+#[derive(PartialEq)]
 pub struct WindowsWindow {
 	pub app_window_class: &'static str,
 	owning_application: *const WindowsApplication,
@@ -682,8 +683,8 @@ impl GenericWindow for WindowsWindow {
     	//TODO: genericize the text variable
     	unsafe { user32::SetWindowTextW(self.hwnd, text.as_ptr()); }
     }
-    fn get_definition(&self) -> WindowDefinition {
-    	*self.window_definitions
+    fn get_definition<'a>(&'a self) -> &'a WindowDefinition {
+    	&self.window_definitions
     }
     fn adjust_cached_size(&self, size: &mut (i32, i32)) {
 		//Unreal Engine 4's check for if the FGenericWindowDefinition is valid is necessary because this is a pointer. Is it necessary in my code?

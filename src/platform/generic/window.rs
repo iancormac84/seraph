@@ -38,6 +38,6 @@ pub trait GenericWindow {
 	fn get_os_window_handle(&self) -> *const c_void;
 	fn is_foreground_window(&self) -> bool;
     fn set_text(&self, text: Vec<u16>);
-    fn get_definition(&self) -> WindowDefinition;
+    fn get_definition(&self) -> &WindowDefinition;
     fn adjust_cached_size(&self, size: &mut (i32, i32));
 }

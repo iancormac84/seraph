@@ -4,6 +4,7 @@ use winapi::{BOOL, RECT};
 
 type FloatVec2 = Vector2<f32>;
 
+#[derive(Copy, Clone)]
 pub enum MouseCursor {
     /** Causes no mouse cursor to be visible */
     None,
@@ -69,6 +70,7 @@ impl MouseCursor {
             12 => MouseCursor::SlashedCircle,
             13 => MouseCursor::EyeDropper,
             14 => MouseCursor::Custom,
+            _ => MouseCursor::Default,
         }
     }
     pub fn to_usize(&self) -> usize {
@@ -103,7 +105,7 @@ pub trait ICursor {
 	fn set_type(&mut self, new_cursor: MouseCursor);
 
 	/** Gets the current type of the cursor */
-	fn get_type(&self) -> MouseCursor;
+	fn get_type(&self) -> &MouseCursor;
 
 	/** Gets the size of the cursor */
 	fn get_size(&self, width: &mut i32, height: &mut i32);

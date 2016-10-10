@@ -62,7 +62,7 @@ pub trait GenericApplication {
 	type Window: GenericWindow;
 
 	fn set_message_handler(&mut self, in_message_handler: &Rc<ApplicationMessageHandler>);
-	fn get_message_handler(&self) -> Rc<ApplicationMessageHandler>;
+	fn get_message_handler(&self) -> &Rc<ApplicationMessageHandler>;
 	//fn poll_game_device_state(&self, time_delta: f32);
     fn pump_messages(&self, time_delta: f32);
     //fn process_deferred_events(&self, time_delta: f32);

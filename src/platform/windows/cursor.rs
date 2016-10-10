@@ -51,14 +51,14 @@ impl WindowsCursor {
 		    		},
 		    		//TODO
 		    		MouseCursor::GrabHand => {
-		    			cursor_handle = user32::LoadCursorFromFileW(OsStr::new(r"F:\Programs\Epic Games\4.12\Engine\Content\Editor\Slate\Cursor\grabhand.cur").encode_wide().chain(Some(0).into_iter()).collect::<Vec<u16>>().as_ptr());
+		    			cursor_handle = user32::LoadCursorFromFileW(OsStr::new(r"F:\Programs\Epic Games\4.13\Engine\Content\Editor\Slate\Cursor\grabhand.cur").encode_wide().chain(Some(0).into_iter()).collect::<Vec<u16>>().as_ptr());
 		    			if cursor_handle.is_null() {
 				            // Failed to load file, fall back
 				            cursor_handle = user32::LoadCursorW(ptr::null_mut(), IDC_HAND);
 			            }
 		    		},
 		    		MouseCursor::GrabHandClosed => {
-		    			cursor_handle = user32::LoadCursorFromFileW(OsStr::new(r"F:\Programs\Epic Games\4.12\Engine\Content\Editor\Slate\Cursor\grabhand_closed.cur").encode_wide().chain(Some(0).into_iter()).collect::<Vec<u16>>().as_ptr());
+		    			cursor_handle = user32::LoadCursorFromFileW(OsStr::new(r"F:\Programs\Epic Games\4.13\Engine\Content\Editor\Slate\Cursor\grabhand_closed.cur").encode_wide().chain(Some(0).into_iter()).collect::<Vec<u16>>().as_ptr());
 		    			if cursor_handle.is_null() {
 				            // Failed to load file, fall back
 				            cursor_handle = user32::LoadCursorW(ptr::null_mut(), IDC_HAND);
@@ -68,10 +68,7 @@ impl WindowsCursor {
 		    			cursor_handle = user32::LoadCursorW(ptr::null_mut(), IDC_NO);
 		    		},
 		    		MouseCursor::EyeDropper => {
-		    			cursor_handle = user32::LoadCursorFromFileW(OsStr::new(r"F:\Programs\Epic Games\4.12\Engine\Content\Editor\Slate\Cursor\eyedropper.cur").encode_wide().chain(Some(0).into_iter()).collect::<Vec<u16>>().as_ptr());
-		    		},
-		    		_ => {
-		    			println!("Warning: Unknown cursor type. {}", i);
+		    			cursor_handle = user32::LoadCursorFromFileW(OsStr::new(r"F:\Programs\Epic Games\4.13\Engine\Content\Editor\Slate\Cursor\eyedropper.cur").encode_wide().chain(Some(0).into_iter()).collect::<Vec<u16>>().as_ptr());
 		    		}
 		    	}
 		    	windows_cursor.cursor_handles[i] = cursor_handle;
@@ -104,8 +101,8 @@ impl ICursor for WindowsCursor {
 			user32::SetCursor(self.cursor_handles[new_cursor as usize]);
 		}
 	}
-	fn get_type(&self) -> MouseCursor {
-		self.current_type
+	fn get_type<'a>(&'a self) -> &'a MouseCursor {
+		&self.current_type
 	}
 	fn get_size(&self, width: &mut i32, height: &mut i32) {
 		*width = 16;
