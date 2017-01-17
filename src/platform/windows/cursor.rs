@@ -8,6 +8,7 @@ use winapi::{BOOL, FALSE, HCURSOR, IDC_ARROW, IDC_CROSS, IDC_HAND, IDC_IBEAM, ID
 
 type FloatVec2 = Vector2<f32>;
 
+#[derive(PartialEq)]
 pub struct WindowsCursor {
 	pub current_type: MouseCursor,
     pub cursor_handles: [HCURSOR; 15],

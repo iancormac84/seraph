@@ -1,9 +1,385 @@
-6f3efa509329076debb2b3cb4e5177afafc61a22: First commit. Going to try to implement Unreal Engine 4's windowing systems. Of course, this wouldn't be a good idea to use in code in my game engine, but this is for testing purposes.
-0dd2d546b17e026f7280c3c3327e5be2e9820d65: Implemented a lot of the Unreal Engine 4 FWindowsWindow API. I have to decide whether to make some of the methods be part of a trait so that I can implement them for other platform specific data structures. It compiles successfully, by the way.
-cd13e9a0fab39920912ba0dd216d0507eb2a1464: Implemented part of FWindowsApplication. It has many different parts to it that I most likely will have to stub out for now. I'm working towards testing the message handling system to see if my hack with the IWindowsMessageHandler trait will work. I probably am going to implement the FWindowsWindow::Initialize method next.
-cb91d9aabab31499d450e63e85017c4cf8a88da4: Restructured the crate structure so that all the code isn't contained in one monolothic file. I have a preliminary structure set up for cross-platform implementations of everything needed for a native windowing library. This work came after a long struggle with trying to implement IDropTarget for WindowsWindow. I have an idea to create a thread-local storage container with static bounds that will allow me to access the WindowsWindow's OLE reference count variable and other stuff. Don't know if it will work. If it compiles, I'll feel pretty badass. If a test program runs, I'll feel I'm on my way to important breakthroughs about Rust.
-409e41ccc6f5eda0f2c6813d677f71290403daad: Made a lot of additions that I'm not sure about. Most of the additions were based on code in the GenericApplicationMessageHandler.h and GenericApplication.cpp files. I implemented a class with static strings representing the different control inputs that could be seen by the game engine. Also, I implemented the GenericApplicationMessageHandler virtual class as a trait. I don't know if that's the right thing to do; a delegate class comes to mind. Also, I have reservations about my liberal use of the GenericWindow trait as variable input to the trait's methods, partly because I'm not sure how the fact that I don't have an equivalent to both the SharedRef and SharedPtr classes.
-bc4155912e4103b36b07bc075044ead32734953d: Not buildable in its current state, but I wanted to save my progress. I'm now trying to implement the Windows message handling infrastructure.
-0d15bd934174e24ff4791586cc9e43f8d748b38e: Still not building, but I've gotten much closer to eliminating all the errors in the code. One big error will be eliminated when I implement the DeferMessage method for WindowsApplication. This will be a bit of a haul though, because I'll have to implement a lot of other functions.
-7749509b958851d1e3653337dd149a8074e5adc7: Added Cursor implementation etc. Going to try to implement the base class for the platform specific Application classes. Not sure what I'm doing, but I have to try something.
-08aada4a02d1373130f34191beb330fbeaf1fdc9: Still not compiling. Was messing around with ApplicationMessageHandler and trait objects. I don't like my solution, which was to mem::transmute the WindowsWindow variable to a GenericWindow variable. I'm going to try to change this. Anyway committing this so I can recover some code that I accidentally deleted.
+warning: package replacement is not used: https://github.com/rust-lang/crates.io-index#winreg:0.4.0
+warning: package replacement is not used: https://github.com/rust-lang/crates.io-index#winapi-build:0.1.1
+   Compiling winapi-build v0.1.1 (file:///E:/Devel/resources/winapi-rs/build)
+   Compiling winapi v0.2.8 (file:///E:/Devel/resources/winapi-rs)
+   Compiling user32-sys v0.2.0 (file:///E:/Devel/resources/winapi-rs/lib/user32)
+   Compiling ole32-sys v0.2.0 (file:///E:/Devel/resources/winapi-rs/lib/ole32)
+   Compiling setupapi-sys v0.0.1 (file:///E:/Devel/resources/winapi-rs/lib/setupapi)
+   Compiling dwmapi-sys v0.1.0 (file:///E:/Devel/resources/winapi-rs/lib/dwmapi)
+   Compiling kernel32-sys v0.2.2 (file:///E:/Devel/resources/winapi-rs/lib/kernel32)
+   Compiling advapi32-sys v0.2.0 (file:///E:/Devel/resources/winapi-rs/lib/advapi32)
+   Compiling gdi32-sys v0.2.0 (file:///E:/Devel/resources/winapi-rs/lib/gdi32)
+   Compiling ktmw32-sys v0.1.0 (file:///E:/Devel/resources/winapi-rs/lib/ktmw32)
+   Compiling winreg v0.4.0 (file:///E:/Devel/resources/winreg-rs)
+   Compiling windowmaker v0.1.0 (file:///E:/Devel/sandbox/windowmaker)
+error[E0432]: unresolved import `winapi::DLGC_WANTALLKEYS`
+  --> src\platform\windows\application.rs:22:53
+   |
+22 |     DISPLAY_DEVICE_PRIMARY_DEVICE, DISPLAY_DEVICEW, DLGC_WANTALLKEYS, DWORD, ERROR_NO_MORE_ITEMS, FALSE, FILTERKEYS, FKF_CONFIRMHOTKEY, FKF_FILTERKEYSON, FKF_HOTKEYACTIVE, GUID, GWL_STYLE,
+   |                                                     ^^^^^^^^^^^^^^^^ no `DLGC_WANTALLKEYS` in the root
+
+error[E0432]: unresolved import `winapi::FILTERKEYS`
+  --> src\platform\windows\application.rs:22:106
+   |
+22 |     DISPLAY_DEVICE_PRIMARY_DEVICE, DISPLAY_DEVICEW, DLGC_WANTALLKEYS, DWORD, ERROR_NO_MORE_ITEMS, FALSE, FILTERKEYS, FKF_CONFIRMHOTKEY, FKF_FILTERKEYSON, FKF_HOTKEYACTIVE, GUID, GWL_STYLE,
+   |                                                                                                          ^^^^^^^^^^ no `FILTERKEYS` in the root
+
+error[E0432]: unresolved import `winapi::FKF_CONFIRMHOTKEY`
+  --> src\platform\windows\application.rs:22:118
+   |
+22 |     DISPLAY_DEVICE_PRIMARY_DEVICE, DISPLAY_DEVICEW, DLGC_WANTALLKEYS, DWORD, ERROR_NO_MORE_ITEMS, FALSE, FILTERKEYS, FKF_CONFIRMHOTKEY, FKF_FILTERKEYSON, FKF_HOTKEYACTIVE, GUID, GWL_STYLE,
+   |                                                                                                                      ^^^^^^^^^^^^^^^^^ no `FKF_CONFIRMHOTKEY` in the root
+
+error[E0432]: unresolved import `winapi::FKF_FILTERKEYSON`
+  --> src\platform\windows\application.rs:22:137
+   |
+22 |     DISPLAY_DEVICE_PRIMARY_DEVICE, DISPLAY_DEVICEW, DLGC_WANTALLKEYS, DWORD, ERROR_NO_MORE_ITEMS, FALSE, FILTERKEYS, FKF_CONFIRMHOTKEY, FKF_FILTERKEYSON, FKF_HOTKEYACTIVE, GUID, GWL_STYLE,
+   |                                                                                                                                         ^^^^^^^^^^^^^^^^ no `FKF_FILTERKEYSON` in the root
+
+error[E0432]: unresolved import `winapi::FKF_HOTKEYACTIVE`
+  --> src\platform\windows\application.rs:22:155
+   |
+22 |     DISPLAY_DEVICE_PRIMARY_DEVICE, DISPLAY_DEVICEW, DLGC_WANTALLKEYS, DWORD, ERROR_NO_MORE_ITEMS, FALSE, FILTERKEYS, FKF_CONFIRMHOTKEY, FKF_FILTERKEYSON, FKF_HOTKEYACTIVE, GUID, GWL_STYLE,
+   |                                                                                                                                                           ^^^^^^^^^^^^^^^^ no `FKF_HOTKEYACTIVE` in the root
+
+error[E0432]: unresolved import `winapi::IMN_CHANGECANDIDATE`
+  --> src\platform\windows\application.rs:25:5
+   |
+25 |     IMN_CHANGECANDIDATE, IMN_CLOSECANDIDATE, IMN_CLOSESTATUSWINDOW, IMN_GUIDELINE, IMN_OPENCANDIDATE, IMN_OPENSTATUSWINDOW, IMN_PRIVATE, IMN_SETCANDIDATEPOS,
+   |     ^^^^^^^^^^^^^^^^^^^ no `IMN_CHANGECANDIDATE` in the root
+
+error[E0432]: unresolved import `winapi::IMN_CLOSECANDIDATE`
+  --> src\platform\windows\application.rs:25:26
+   |
+25 |     IMN_CHANGECANDIDATE, IMN_CLOSECANDIDATE, IMN_CLOSESTATUSWINDOW, IMN_GUIDELINE, IMN_OPENCANDIDATE, IMN_OPENSTATUSWINDOW, IMN_PRIVATE, IMN_SETCANDIDATEPOS,
+   |                          ^^^^^^^^^^^^^^^^^^ no `IMN_CLOSECANDIDATE` in the root
+
+error[E0432]: unresolved import `winapi::IMN_CLOSESTATUSWINDOW`
+  --> src\platform\windows\application.rs:25:46
+   |
+25 |     IMN_CHANGECANDIDATE, IMN_CLOSECANDIDATE, IMN_CLOSESTATUSWINDOW, IMN_GUIDELINE, IMN_OPENCANDIDATE, IMN_OPENSTATUSWINDOW, IMN_PRIVATE, IMN_SETCANDIDATEPOS,
+   |                                              ^^^^^^^^^^^^^^^^^^^^^ no `IMN_CLOSESTATUSWINDOW` in the root
+
+error[E0432]: unresolved import `winapi::IMN_GUIDELINE`
+  --> src\platform\windows\application.rs:25:69
+   |
+25 |     IMN_CHANGECANDIDATE, IMN_CLOSECANDIDATE, IMN_CLOSESTATUSWINDOW, IMN_GUIDELINE, IMN_OPENCANDIDATE, IMN_OPENSTATUSWINDOW, IMN_PRIVATE, IMN_SETCANDIDATEPOS,
+   |                                                                     ^^^^^^^^^^^^^ no `IMN_GUIDELINE` in the root
+
+error[E0432]: unresolved import `winapi::IMN_OPENCANDIDATE`
+  --> src\platform\windows\application.rs:25:84
+   |
+25 |     IMN_CHANGECANDIDATE, IMN_CLOSECANDIDATE, IMN_CLOSESTATUSWINDOW, IMN_GUIDELINE, IMN_OPENCANDIDATE, IMN_OPENSTATUSWINDOW, IMN_PRIVATE, IMN_SETCANDIDATEPOS,
+   |                                                                                    ^^^^^^^^^^^^^^^^^ no `IMN_OPENCANDIDATE` in the root
+
+error[E0432]: unresolved import `winapi::IMN_OPENSTATUSWINDOW`
+  --> src\platform\windows\application.rs:25:103
+   |
+25 |     IMN_CHANGECANDIDATE, IMN_CLOSECANDIDATE, IMN_CLOSESTATUSWINDOW, IMN_GUIDELINE, IMN_OPENCANDIDATE, IMN_OPENSTATUSWINDOW, IMN_PRIVATE, IMN_SETCANDIDATEPOS,
+   |                                                                                                       ^^^^^^^^^^^^^^^^^^^^ no `IMN_OPENSTATUSWINDOW` in the root
+
+error[E0432]: unresolved import `winapi::IMN_PRIVATE`
+  --> src\platform\windows\application.rs:25:125
+   |
+25 |     IMN_CHANGECANDIDATE, IMN_CLOSECANDIDATE, IMN_CLOSESTATUSWINDOW, IMN_GUIDELINE, IMN_OPENCANDIDATE, IMN_OPENSTATUSWINDOW, IMN_PRIVATE, IMN_SETCANDIDATEPOS,
+   |                                                                                                                             ^^^^^^^^^^^ no `IMN_PRIVATE` in the root. Did you mean to use `MEM_PRIVATE`?
+
+error[E0432]: unresolved import `winapi::IMN_SETCANDIDATEPOS`
+  --> src\platform\windows\application.rs:25:138
+   |
+25 |     IMN_CHANGECANDIDATE, IMN_CLOSECANDIDATE, IMN_CLOSESTATUSWINDOW, IMN_GUIDELINE, IMN_OPENCANDIDATE, IMN_OPENSTATUSWINDOW, IMN_PRIVATE, IMN_SETCANDIDATEPOS,
+   |                                                                                                                                          ^^^^^^^^^^^^^^^^^^^ no `IMN_SETCANDIDATEPOS` in the root
+
+error[E0432]: unresolved import `winapi::IMN_SETCOMPOSITIONFONT`
+  --> src\platform\windows\application.rs:26:5
+   |
+26 |     IMN_SETCOMPOSITIONFONT, IMN_SETCOMPOSITIONWINDOW, IMN_SETCONVERSIONMODE, IMN_SETOPENSTATUS, IMN_SETSENTENCEMODE, IMN_SETSTATUSWINDOWPOS, IMR_CANDIDATEWINDOW, IMR_COMPOSITIONFONT,
+   |     ^^^^^^^^^^^^^^^^^^^^^^ no `IMN_SETCOMPOSITIONFONT` in the root
+
+error[E0432]: unresolved import `winapi::IMN_SETCOMPOSITIONWINDOW`
+  --> src\platform\windows\application.rs:26:29
+   |
+26 |     IMN_SETCOMPOSITIONFONT, IMN_SETCOMPOSITIONWINDOW, IMN_SETCONVERSIONMODE, IMN_SETOPENSTATUS, IMN_SETSENTENCEMODE, IMN_SETSTATUSWINDOWPOS, IMR_CANDIDATEWINDOW, IMR_COMPOSITIONFONT,
+   |                             ^^^^^^^^^^^^^^^^^^^^^^^^ no `IMN_SETCOMPOSITIONWINDOW` in the root
+
+error[E0432]: unresolved import `winapi::IMN_SETCONVERSIONMODE`
+  --> src\platform\windows\application.rs:26:55
+   |
+26 |     IMN_SETCOMPOSITIONFONT, IMN_SETCOMPOSITIONWINDOW, IMN_SETCONVERSIONMODE, IMN_SETOPENSTATUS, IMN_SETSENTENCEMODE, IMN_SETSTATUSWINDOWPOS, IMR_CANDIDATEWINDOW, IMR_COMPOSITIONFONT,
+   |                                                       ^^^^^^^^^^^^^^^^^^^^^ no `IMN_SETCONVERSIONMODE` in the root
+
+error[E0432]: unresolved import `winapi::IMN_SETOPENSTATUS`
+  --> src\platform\windows\application.rs:26:78
+   |
+26 |     IMN_SETCOMPOSITIONFONT, IMN_SETCOMPOSITIONWINDOW, IMN_SETCONVERSIONMODE, IMN_SETOPENSTATUS, IMN_SETSENTENCEMODE, IMN_SETSTATUSWINDOWPOS, IMR_CANDIDATEWINDOW, IMR_COMPOSITIONFONT,
+   |                                                                              ^^^^^^^^^^^^^^^^^ no `IMN_SETOPENSTATUS` in the root. Did you mean to use `EM_SETIMESTATUS`?
+
+error[E0432]: unresolved import `winapi::IMN_SETSENTENCEMODE`
+  --> src\platform\windows\application.rs:26:97
+   |
+26 |     IMN_SETCOMPOSITIONFONT, IMN_SETCOMPOSITIONWINDOW, IMN_SETCONVERSIONMODE, IMN_SETOPENSTATUS, IMN_SETSENTENCEMODE, IMN_SETSTATUSWINDOWPOS, IMR_CANDIDATEWINDOW, IMR_COMPOSITIONFONT,
+   |                                                                                                 ^^^^^^^^^^^^^^^^^^^ no `IMN_SETSENTENCEMODE` in the root
+
+error[E0432]: unresolved import `winapi::IMN_SETSTATUSWINDOWPOS`
+  --> src\platform\windows\application.rs:26:118
+   |
+26 |     IMN_SETCOMPOSITIONFONT, IMN_SETCOMPOSITIONWINDOW, IMN_SETCONVERSIONMODE, IMN_SETOPENSTATUS, IMN_SETSENTENCEMODE, IMN_SETSTATUSWINDOWPOS, IMR_CANDIDATEWINDOW, IMR_COMPOSITIONFONT,
+   |                                                                                                                      ^^^^^^^^^^^^^^^^^^^^^^ no `IMN_SETSTATUSWINDOWPOS` in the root
+
+error[E0432]: unresolved import `winapi::IMR_CANDIDATEWINDOW`
+  --> src\platform\windows\application.rs:26:142
+   |
+26 |     IMN_SETCOMPOSITIONFONT, IMN_SETCOMPOSITIONWINDOW, IMN_SETCONVERSIONMODE, IMN_SETOPENSTATUS, IMN_SETSENTENCEMODE, IMN_SETSTATUSWINDOWPOS, IMR_CANDIDATEWINDOW, IMR_COMPOSITIONFONT,
+   |                                                                                                                                              ^^^^^^^^^^^^^^^^^^^ no `IMR_CANDIDATEWINDOW` in the root
+
+error[E0432]: unresolved import `winapi::IMR_COMPOSITIONFONT`
+  --> src\platform\windows\application.rs:26:163
+   |
+26 |     IMN_SETCOMPOSITIONFONT, IMN_SETCOMPOSITIONWINDOW, IMN_SETCONVERSIONMODE, IMN_SETOPENSTATUS, IMN_SETSENTENCEMODE, IMN_SETSTATUSWINDOWPOS, IMR_CANDIDATEWINDOW, IMR_COMPOSITIONFONT,
+   |                                                                                                                                                                   ^^^^^^^^^^^^^^^^^^^ no `IMR_COMPOSITIONFONT` in the root
+
+error[E0432]: unresolved import `winapi::IMR_COMPOSITIONWINDOW`
+  --> src\platform\windows\application.rs:27:5
+   |
+27 |     IMR_COMPOSITIONWINDOW, IMR_CONFIRMRECONVERTSTRING, IMR_DOCUMENTFEED, IMR_QUERYCHARPOSITION, IMR_RECONVERTSTRING, INVALID_HANDLE_VALUE, KEY_READ, LOWORD, LPARAM, LPNCCALCSIZE_PARAMS,
+   |     ^^^^^^^^^^^^^^^^^^^^^ no `IMR_COMPOSITIONWINDOW` in the root
+
+error[E0432]: unresolved import `winapi::IMR_CONFIRMRECONVERTSTRING`
+  --> src\platform\windows\application.rs:27:28
+   |
+27 |     IMR_COMPOSITIONWINDOW, IMR_CONFIRMRECONVERTSTRING, IMR_DOCUMENTFEED, IMR_QUERYCHARPOSITION, IMR_RECONVERTSTRING, INVALID_HANDLE_VALUE, KEY_READ, LOWORD, LPARAM, LPNCCALCSIZE_PARAMS,
+   |                            ^^^^^^^^^^^^^^^^^^^^^^^^^^ no `IMR_CONFIRMRECONVERTSTRING` in the root
+
+error[E0432]: unresolved import `winapi::IMR_DOCUMENTFEED`
+  --> src\platform\windows\application.rs:27:56
+   |
+27 |     IMR_COMPOSITIONWINDOW, IMR_CONFIRMRECONVERTSTRING, IMR_DOCUMENTFEED, IMR_QUERYCHARPOSITION, IMR_RECONVERTSTRING, INVALID_HANDLE_VALUE, KEY_READ, LOWORD, LPARAM, LPNCCALCSIZE_PARAMS,
+   |                                                        ^^^^^^^^^^^^^^^^ no `IMR_DOCUMENTFEED` in the root
+
+error[E0432]: unresolved import `winapi::IMR_QUERYCHARPOSITION`
+  --> src\platform\windows\application.rs:27:74
+   |
+27 |     IMR_COMPOSITIONWINDOW, IMR_CONFIRMRECONVERTSTRING, IMR_DOCUMENTFEED, IMR_QUERYCHARPOSITION, IMR_RECONVERTSTRING, INVALID_HANDLE_VALUE, KEY_READ, LOWORD, LPARAM, LPNCCALCSIZE_PARAMS,
+   |                                                                          ^^^^^^^^^^^^^^^^^^^^^ no `IMR_QUERYCHARPOSITION` in the root
+
+error[E0432]: unresolved import `winapi::IMR_RECONVERTSTRING`
+  --> src\platform\windows\application.rs:27:97
+   |
+27 |     IMR_COMPOSITIONWINDOW, IMR_CONFIRMRECONVERTSTRING, IMR_DOCUMENTFEED, IMR_QUERYCHARPOSITION, IMR_RECONVERTSTRING, INVALID_HANDLE_VALUE, KEY_READ, LOWORD, LPARAM, LPNCCALCSIZE_PARAMS,
+   |                                                                                                 ^^^^^^^^^^^^^^^^^^^ no `IMR_RECONVERTSTRING` in the root
+
+error[E0432]: unresolved import `winapi::SKF_CONFIRMHOTKEY`
+  --> src\platform\windows\application.rs:31:93
+   |
+31 |     RECT, RIDEV_REMOVE, RIDI_DEVICENAME, RID_INPUT, RIM_TYPEMOUSE, SC_MAXIMIZE, SC_RESTORE, SKF_CONFIRMHOTKEY, SKF_HOTKEYACTIVE, SKF_STICKYKEYSON, SM_CXSCREEN,
+   |                                                                                             ^^^^^^^^^^^^^^^^^ no `SKF_CONFIRMHOTKEY` in the root
+
+error[E0432]: unresolved import `winapi::SKF_HOTKEYACTIVE`
+  --> src\platform\windows\application.rs:31:112
+   |
+31 |     RECT, RIDEV_REMOVE, RIDI_DEVICENAME, RID_INPUT, RIM_TYPEMOUSE, SC_MAXIMIZE, SC_RESTORE, SKF_CONFIRMHOTKEY, SKF_HOTKEYACTIVE, SKF_STICKYKEYSON, SM_CXSCREEN,
+   |                                                                                                                ^^^^^^^^^^^^^^^^ no `SKF_HOTKEYACTIVE` in the root
+
+error[E0432]: unresolved import `winapi::SKF_STICKYKEYSON`
+  --> src\platform\windows\application.rs:31:130
+   |
+31 |     RECT, RIDEV_REMOVE, RIDI_DEVICENAME, RID_INPUT, RIM_TYPEMOUSE, SC_MAXIMIZE, SC_RESTORE, SKF_CONFIRMHOTKEY, SKF_HOTKEYACTIVE, SKF_STICKYKEYSON, SM_CXSCREEN,
+   |                                                                                                                                  ^^^^^^^^^^^^^^^^ no `SKF_STICKYKEYSON` in the root
+
+error[E0432]: unresolved import `winapi::STICKYKEYS`
+  --> src\platform\windows\application.rs:33:5
+   |
+33 |     STICKYKEYS, SW_RESTORE,
+   |     ^^^^^^^^^^ no `STICKYKEYS` in the root
+
+error[E0432]: unresolved import `winapi::TKF_CONFIRMHOTKEY`
+  --> src\platform\windows\application.rs:34:5
+   |
+34 |     TKF_CONFIRMHOTKEY, TKF_HOTKEYACTIVE, TKF_TOGGLEKEYSON, TOGGLEKEYS, TRUE, VK_CAPITAL, VK_F4, VK_LCONTROL, VK_LMENU, VK_LSHIFT, VK_RCONTROL, VK_RMENU, VK_RSHIFT, VK_SPACE, WINDOWINFO,
+   |     ^^^^^^^^^^^^^^^^^ no `TKF_CONFIRMHOTKEY` in the root
+
+error[E0432]: unresolved import `winapi::TKF_HOTKEYACTIVE`
+  --> src\platform\windows\application.rs:34:24
+   |
+34 |     TKF_CONFIRMHOTKEY, TKF_HOTKEYACTIVE, TKF_TOGGLEKEYSON, TOGGLEKEYS, TRUE, VK_CAPITAL, VK_F4, VK_LCONTROL, VK_LMENU, VK_LSHIFT, VK_RCONTROL, VK_RMENU, VK_RSHIFT, VK_SPACE, WINDOWINFO,
+   |                        ^^^^^^^^^^^^^^^^ no `TKF_HOTKEYACTIVE` in the root
+
+error[E0432]: unresolved import `winapi::TKF_TOGGLEKEYSON`
+  --> src\platform\windows\application.rs:34:42
+   |
+34 |     TKF_CONFIRMHOTKEY, TKF_HOTKEYACTIVE, TKF_TOGGLEKEYSON, TOGGLEKEYS, TRUE, VK_CAPITAL, VK_F4, VK_LCONTROL, VK_LMENU, VK_LSHIFT, VK_RCONTROL, VK_RMENU, VK_RSHIFT, VK_SPACE, WINDOWINFO,
+   |                                          ^^^^^^^^^^^^^^^^ no `TKF_TOGGLEKEYSON` in the root
+
+error[E0432]: unresolved import `winapi::TOGGLEKEYS`
+  --> src\platform\windows\application.rs:34:60
+   |
+34 |     TKF_CONFIRMHOTKEY, TKF_HOTKEYACTIVE, TKF_TOGGLEKEYSON, TOGGLEKEYS, TRUE, VK_CAPITAL, VK_F4, VK_LCONTROL, VK_LMENU, VK_LSHIFT, VK_RCONTROL, VK_RMENU, VK_RSHIFT, VK_SPACE, WINDOWINFO,
+   |                                                            ^^^^^^^^^^ no `TOGGLEKEYS` in the root
+
+error[E0432]: unresolved import `winapi::WINDOWINFO`
+  --> src\platform\windows\application.rs:34:175
+   |
+34 |     TKF_CONFIRMHOTKEY, TKF_HOTKEYACTIVE, TKF_TOGGLEKEYSON, TOGGLEKEYS, TRUE, VK_CAPITAL, VK_F4, VK_LCONTROL, VK_LMENU, VK_LSHIFT, VK_RCONTROL, VK_RMENU, VK_RSHIFT, VK_SPACE, WINDOWINFO,
+   |                                                                                                                                                                               ^^^^^^^^^^ no `WINDOWINFO` in the root
+
+error[E0432]: unresolved import `winapi::DWMNCRENDERINGPOLICY`
+  --> src\platform\windows\window.rs:13:8
+   |
+13 | 	BOOL, DWMNCRENDERINGPOLICY, DWMNCRP_DISABLED, DWMWA_ALLOW_NCPAINT, DWMWA_NCRENDERING_POLICY, DWORD, FALSE, GWL_EXSTYLE, GWL_STYLE, HINSTANCE, HRESULT, HRGN, HWND, HWND_TOP,
+   | 	      ^^^^^^^^^^^^^^^^^^^^ no `DWMNCRENDERINGPOLICY` in the root
+
+error[E0432]: unresolved import `winapi::DWMNCRP_DISABLED`
+  --> src\platform\windows\window.rs:13:30
+   |
+13 | 	BOOL, DWMNCRENDERINGPOLICY, DWMNCRP_DISABLED, DWMWA_ALLOW_NCPAINT, DWMWA_NCRENDERING_POLICY, DWORD, FALSE, GWL_EXSTYLE, GWL_STYLE, HINSTANCE, HRESULT, HRGN, HWND, HWND_TOP,
+   | 	                            ^^^^^^^^^^^^^^^^ no `DWMNCRP_DISABLED` in the root
+
+error[E0432]: unresolved import `winapi::DWMWA_ALLOW_NCPAINT`
+  --> src\platform\windows\window.rs:13:48
+   |
+13 | 	BOOL, DWMNCRENDERINGPOLICY, DWMNCRP_DISABLED, DWMWA_ALLOW_NCPAINT, DWMWA_NCRENDERING_POLICY, DWORD, FALSE, GWL_EXSTYLE, GWL_STYLE, HINSTANCE, HRESULT, HRGN, HWND, HWND_TOP,
+   | 	                                              ^^^^^^^^^^^^^^^^^^^ no `DWMWA_ALLOW_NCPAINT` in the root
+
+error[E0432]: unresolved import `winapi::DWMWA_NCRENDERING_POLICY`
+  --> src\platform\windows\window.rs:13:69
+   |
+13 | 	BOOL, DWMNCRENDERINGPOLICY, DWMNCRP_DISABLED, DWMWA_ALLOW_NCPAINT, DWMWA_NCRENDERING_POLICY, DWORD, FALSE, GWL_EXSTYLE, GWL_STYLE, HINSTANCE, HRESULT, HRGN, HWND, HWND_TOP,
+   | 	                                                                   ^^^^^^^^^^^^^^^^^^^^^^^^ no `DWMWA_NCRENDERING_POLICY` in the root
+
+error[E0432]: unresolved import `winapi::IDataObject`
+  --> src\platform\windows\window.rs:14:16
+   |
+14 | 	HWND_TOPMOST, IDataObject, IDropTarget, LWA_ALPHA, MARGINS, MB_ICONEXCLAMATION, MB_OK, MONITORINFO, MONITOR_DEFAULTTOPRIMARY, MONITOR_DEFAULTTONEAREST, POINTL,
+   | 	              ^^^^^^^^^^^ no `IDataObject` in the root. Did you mean to use `IDXGIObject`?
+
+error[E0432]: unresolved import `winapi::IDropTarget`
+  --> src\platform\windows\window.rs:14:29
+   |
+14 | 	HWND_TOPMOST, IDataObject, IDropTarget, LWA_ALPHA, MARGINS, MB_ICONEXCLAMATION, MB_OK, MONITORINFO, MONITOR_DEFAULTTOPRIMARY, MONITOR_DEFAULTTONEAREST, POINTL,
+   | 	                           ^^^^^^^^^^^ no `IDropTarget` in the root
+
+error[E0432]: unresolved import `winapi::MARGINS`
+  --> src\platform\windows\window.rs:14:53
+   |
+14 | 	HWND_TOPMOST, IDataObject, IDropTarget, LWA_ALPHA, MARGINS, MB_ICONEXCLAMATION, MB_OK, MONITORINFO, MONITOR_DEFAULTTOPRIMARY, MONITOR_DEFAULTTONEAREST, POINTL,
+   | 	                                                   ^^^^^^^ no `MARGINS` in the root
+
+error[E0432]: unresolved import `winapi::WINDOWINFO`
+  --> src\platform\windows\window.rs:16:54
+   |
+16 | 	SWP_NOSENDCHANGING, SWP_NOSIZE, SWP_NOZORDER, S_OK, WINDOWINFO, WINDOWPLACEMENT, WS_BORDER, WS_CAPTION, WS_CLIPCHILDREN, WS_CLIPSIBLINGS, WS_EX_APPWINDOW,
+   | 	                                                    ^^^^^^^^^^ no `WINDOWINFO` in the root
+
+error[E0425]: unresolved name `dwmapi::DwmIsCompositionEnabled`
+   --> src\platform\windows\application.rs:327:15
+    |
+327 | 	    unsafe { dwmapi::DwmIsCompositionEnabled(&mut is_composition_enabled); }
+    | 	             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unresolved name
+
+error[E0425]: unresolved name `user32::GetWindowInfo`
+   --> src\platform\windows\application.rs:542:33
+    |
+542 |                                 user32::GetWindowInfo(hwnd, &mut window_info);
+    |                                 ^^^^^^^^^^^^^^^^^^^^^ unresolved name
+
+error[E0425]: unresolved name `user32::GetWindowInfo`
+   --> src\platform\windows\application.rs:596:29
+    |
+596 |                             user32::GetWindowInfo(hwnd, &mut window_info);
+    |                             ^^^^^^^^^^^^^^^^^^^^^ unresolved name
+
+error[E0425]: unresolved name `dwmapi::DwmSetWindowAttribute`
+   --> src\platform\windows\window.rs:210:11
+    |
+210 | 	    		if dwmapi::DwmSetWindowAttribute(self.hwnd, mem::transmute(DWMWA_NCRENDERING_POLICY), mem::transmute(&rendering_policy), mem::size_of::<DWMNCRENDERINGPOLICY>() as u32) != S_OK {
+    | 	    		   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unresolved name
+
+error[E0425]: unresolved name `dwmapi::DwmSetWindowAttribute`
+   --> src\platform\windows\window.rs:214:11
+    |
+214 | 	    		if dwmapi::DwmSetWindowAttribute(self.hwnd, mem::transmute(DWMWA_ALLOW_NCPAINT), mem::transmute(&enable_nc_paint), mem::size_of::<BOOL>() as u32) != S_OK {
+    | 	    		   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unresolved name
+
+error[E0425]: unresolved name `dwmapi::DwmExtendFrameIntoClientArea`
+   --> src\platform\windows\window.rs:219:12
+    |
+219 | 	    			if dwmapi::DwmExtendFrameIntoClientArea(self.hwnd, &margins) != 0 {
+    | 	    			   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unresolved name
+
+error[E0425]: unresolved name `user32::GetWindowInfo`
+   --> src\platform\windows\window.rs:262:13
+    |
+262 | 				        user32::GetWindowInfo(self.hwnd, &mut window_info);
+    | 				        ^^^^^^^^^^^^^^^^^^^^^ unresolved name
+
+error[E0425]: unresolved name `dwmapi::DwmExtendFrameIntoClientArea`
+   --> src\platform\windows\window.rs:330:33
+    |
+330 |             	let res = unsafe { dwmapi::DwmExtendFrameIntoClientArea(self.hwnd, &margins) };
+    |             	                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unresolved name
+
+error[E0425]: unresolved name `user32::GetWindowInfo`
+   --> src\platform\windows\window.rs:370:7
+    |
+370 | 		    user32::GetWindowInfo(self.hwnd, &mut window_info);
+    | 		    ^^^^^^^^^^^^^^^^^^^^^ unresolved name
+
+error[E0425]: unresolved name `user32::GetWindowInfo`
+   --> src\platform\windows\window.rs:668:10
+    |
+668 | 	        user32::GetWindowInfo(self.hwnd, &mut window_info);
+    | 	        ^^^^^^^^^^^^^^^^^^^^^ unresolved name
+
+error[E0369]: binary operation `==` cannot be applied to type `winapi::WINDOWPLACEMENT`
+  --> src\platform\windows\window.rs:53:5
+   |
+53 |     pre_fullscreen_window_placement: WINDOWPLACEMENT,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+note: an implementation of `std::cmp::PartialEq` might be missing for `winapi::WINDOWPLACEMENT`
+  --> src\platform\windows\window.rs:53:5
+   |
+53 |     pre_fullscreen_window_placement: WINDOWPLACEMENT,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0369]: binary operation `==` cannot be applied to type `winapi::WINDOWPLACEMENT`
+  --> src\platform\windows\window.rs:54:5
+   |
+54 |     pre_parent_minimized_window_placement: WINDOWPLACEMENT,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+note: an implementation of `std::cmp::PartialEq` might be missing for `winapi::WINDOWPLACEMENT`
+  --> src\platform\windows\window.rs:54:5
+   |
+54 |     pre_parent_minimized_window_placement: WINDOWPLACEMENT,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0369]: binary operation `!=` cannot be applied to type `winapi::WINDOWPLACEMENT`
+  --> src\platform\windows\window.rs:53:5
+   |
+53 |     pre_fullscreen_window_placement: WINDOWPLACEMENT,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+note: an implementation of `std::cmp::PartialEq` might be missing for `winapi::WINDOWPLACEMENT`
+  --> src\platform\windows\window.rs:53:5
+   |
+53 |     pre_fullscreen_window_placement: WINDOWPLACEMENT,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0369]: binary operation `!=` cannot be applied to type `winapi::WINDOWPLACEMENT`
+  --> src\platform\windows\window.rs:54:5
+   |
+54 |     pre_parent_minimized_window_placement: WINDOWPLACEMENT,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+note: an implementation of `std::cmp::PartialEq` might be missing for `winapi::WINDOWPLACEMENT`
+  --> src\platform\windows\window.rs:54:5
+   |
+54 |     pre_parent_minimized_window_placement: WINDOWPLACEMENT,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: aborting due to 4 previous errors
+
+error: Could not compile `windowmaker`.
+
+To learn more, run the command again with --verbose.

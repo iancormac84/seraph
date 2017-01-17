@@ -1,5 +1,5 @@
 [package]
-name = "windowmaker"
+name = "seraph"
 version = "0.1.0"
 authors = ["iancormac84 <wilnathan@gmail.com>"]
 
@@ -7,18 +7,27 @@ authors = ["iancormac84 <wilnathan@gmail.com>"]
 path = "E:/Devel/resources/cgmath"
 
 [dependencies]
-advapi32-sys = "*"
-bitflags = "*"
-dwmapi-sys = "*"
-gdi32-sys = "*"
-lazy_static = "*"
-ole32-sys = "*"
-setupapi-sys = "*"
-user32-sys = "*"
-winapi = "*"
-winreg = "*"
+advapi32-sys = "0.2.0"
+bitflags = "0.7.0"
+dwmapi-sys = "0.1.0"
+gdi32-sys = "0.2.0"
+lazy_static = "0.2.2"
+ole32-sys = "0.2.0"
+setupapi-sys = "0.0.1"
+user32-sys = "0.2.0"
+winapi = "0.2.8"
+winreg = "0.4.0"
 
 [replace]
+"advapi32-sys:0.2.0" = { path = "E:/Devel/resources/winapi-rs/lib/advapi32" }
+"bitflags:0.7.0" = { path = "E:/Devel/resources/bitflags" }
+"dwmapi-sys:0.1.0" = { path = "E:/Devel/resources/winapi-rs/lib/dwmapi" }
+"gdi32-sys:0.2.0" = { path = "E:/Devel/resources/winapi-rs/lib/gdi32" }
+"kernel32-sys:0.2.2" = { path = "E:/Devel/resources/winapi-rs/lib/kernel32" }
+"ktmw32-sys:0.1.0" = { path = "E:/Devel/resources/winapi-rs/lib/ktmw32" }
+"ole32-sys:0.2.0" = { path = "E:/Devel/resources/winapi-rs/lib/ole32" }
+"user32-sys:0.2.0" = { path = "E:/Devel/resources/winapi-rs/lib/user32" }
+"setupapi-sys:0.0.1" = { path = "E:/Devel/resources/winapi-rs/lib/setupapi" }
 "winapi:0.2.8" = { path = "E:/Devel/resources/winapi-rs" }
 "winapi-build:0.1.1" = { path = "E:/Devel/resources/winapi-rs/build" }
-"winreg:0.3.5" = { path = "E:/Devel/resources/winreg-rs" }
+"winreg:0.4.0" = { path = "E:/Devel/resources/winreg-rs" }

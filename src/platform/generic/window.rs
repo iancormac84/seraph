@@ -1,5 +1,6 @@
 use platform::generic::window_definition::WindowDefinition;
 use std::os::raw::c_void;
+use std::rc::Rc;
 
 #[derive(PartialEq, Copy, Clone)]
 pub enum WindowMode {
@@ -12,9 +13,9 @@ pub enum WindowMode {
 }
 
 pub trait GenericWindow {
-	fn reshape_window(&mut self, mut new_x: i32, mut new_y: i32, mut new_width: i32, mut new_height: i32);
+	fn reshape_window(&mut self, new_x: &mut i32, new_y: &mut i32, new_width: &mut i32, new_height: &mut i32);
 	fn get_fullscreen_info(&self, x: &mut i32, y: &mut i32, width: &mut i32, height: &mut i32) -> bool;
-	fn move_window_to(&self, mut x: i32, mut y: i32);
+	fn move_window_to(&self, x: &mut i32, y: &mut i32);
 	fn bring_to_front(&self, force: bool);
 	//fn HACK_force_to_front(&mut self);
 	//fn destroy(&mut self);
@@ -38,6 +39,6 @@ pub trait GenericWindow {
 	fn get_os_window_handle(&self) -> *const c_void;
 	fn is_foreground_window(&self) -> bool;
     fn set_text(&self, text: Vec<u16>);
-    fn get_definition(&self) -> &WindowDefinition;
+    fn get_definition(&self) -> Rc<WindowDefinition>;
     fn adjust_cached_size(&self, size: &mut (i32, i32));
 }

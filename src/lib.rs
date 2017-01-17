@@ -1,4 +1,5 @@
 #![feature(const_fn)]
+#![allow(dead_code, non_snake_case, non_camel_case_types)]
 #[macro_use]
 extern crate bitflags;
 #[macro_use]
@@ -9,7 +10,7 @@ extern crate gdi32;
 extern crate ole32;
 extern crate setupapi;
 extern crate user32;
-#[macro_use(DEFINE_GUID)]
+#[macro_use(DEFINE_GUID, ENUM)]
 extern crate winapi;
 extern crate winreg;
 

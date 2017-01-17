@@ -1,7 +1,6 @@
 use platform::generic::application_message_handler::ApplicationMessageHandler;
 use platform::generic::cursor::ICursor;
 use platform::generic::window::GenericWindow;
-use std::boxed::Box;
 use std::rc::Rc;
 
 pub static mut DEBUG_SAFE_ZONE_RATIO: f32 = 1.0;
@@ -36,6 +35,7 @@ pub enum PopUpOrientation {
 
 //TODO ModifierKeysState struct
 
+#[derive(PartialEq)]
 pub struct PlatformRect {
 	pub left: i32,
 	pub top: i32,
@@ -43,6 +43,7 @@ pub struct PlatformRect {
 	pub bottom: i32,
 }
 
+#[derive(PartialEq)]
 pub struct MonitorInfo {
 	pub name: String,
 	pub id: String,

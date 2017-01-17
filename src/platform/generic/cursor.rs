@@ -4,7 +4,7 @@ use winapi::{BOOL, RECT};
 
 type FloatVec2 = Vector2<f32>;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum MouseCursor {
     /** Causes no mouse cursor to be visible */
     None,

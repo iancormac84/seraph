@@ -8,43 +8,23 @@ use std::ffi::OsStr;
 use std::os::raw::c_void;
 use std::os::windows::ffi::OsStrExt;
 use std::rc::Rc;
+use super::{DWMNCRP_DISABLED, DWMWA_ALLOW_NCPAINT, DWMWA_NCRENDERING_POLICY, MARGINS, WINDOWINFO};
 use user32;
 use winapi::{
-	BOOL, DWMNCRENDERINGPOLICY, DWMNCRP_DISABLED, DWMWA_ALLOW_NCPAINT, DWMWA_NCRENDERING_POLICY, DWORD, FALSE, GWL_EXSTYLE, GWL_STYLE, HINSTANCE, HRESULT, HRGN, HWND, HWND_TOP,
-	HWND_TOPMOST, IDataObject, IDropTarget, LWA_ALPHA, MARGINS, MB_ICONEXCLAMATION, MB_OK, MONITORINFO, MONITOR_DEFAULTTOPRIMARY, MONITOR_DEFAULTTONEAREST, POINTL,
+	BOOL, DWORD, FALSE, GWL_EXSTYLE, GWL_STYLE, HINSTANCE, HRESULT, HRGN, HWND, HWND_TOP,
+	HWND_TOPMOST, LWA_ALPHA, MB_ICONEXCLAMATION, MB_OK, MONITORINFO, MONITOR_DEFAULTTOPRIMARY, MONITOR_DEFAULTTONEAREST, POINTL,
 	RECT, SM_CYCAPTION, SW_HIDE, SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, SW_SHOW, SW_SHOWNA, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOREDRAW,
-	SWP_NOSENDCHANGING, SWP_NOSIZE, SWP_NOZORDER, S_OK, WINDOWINFO, WINDOWPLACEMENT, WS_BORDER, WS_CAPTION, WS_CLIPCHILDREN, WS_CLIPSIBLINGS, WS_EX_APPWINDOW,
+	SWP_NOSENDCHANGING, SWP_NOSIZE, SWP_NOZORDER, S_OK, WINDOWPLACEMENT, WS_BORDER, WS_CAPTION, WS_CLIPCHILDREN, WS_CLIPSIBLINGS, WS_EX_APPWINDOW,
 	WS_EX_COMPOSITED, WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_EX_WINDOWEDGE, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_OVERLAPPED, WS_POPUP, WS_SYSMENU, WS_THICKFRAME
 };
-
-//TODO will these be necessary?
-unsafe extern "system" fn drag_enter(This: *mut IDropTarget, pDataObj: *const IDataObject, grfKeyState: DWORD, pt: POINTL, pdwEffect: *mut DWORD) -> HRESULT {
-    0
-}
-unsafe extern "system" fn drag_over(This: *mut IDropTarget, grfKeyState: DWORD, pt: POINTL, pdwEffect: *mut DWORD) -> HRESULT {
-    0
-}
-unsafe extern "system" fn drag_leave(This: *mut IDropTarget) -> HRESULT {
-    0
-}
-unsafe extern "system" fn drop(This: *mut IDropTarget, pDataObj: *const IDataObject, grfKeyState: DWORD, pt: POINTL, pdwEffect: *mut DWORD) -> HRESULT {
-    0
-}
-
-pub trait DropTarget {
-	fn drag_enter(&mut self, pDataObj: *const IDataObject, grfKeyState: DWORD, pt: POINTL, pdwEffect: *mut DWORD) -> HRESULT;
-    fn drag_over(&mut self, grfKeyState: DWORD, pt: POINTL, pdwEffect: *mut DWORD) -> HRESULT;
-    fn drag_leave(&mut self) -> HRESULT;
-    fn drop(&mut self, pDataObj: *const IDataObject, grfKeyState: DWORD, pt: POINTL, pdwEffect: *mut DWORD) -> HRESULT;
-}
 
 pub const APP_WINDOW_CLASS: &'static str = "CormacWindow";
 
 //TODO can I make this capable of clone? I want to try this so I don't have to do a clone in the WindowsApplication::find_window_by_hwnd method.
 #[derive(PartialEq)]
-pub struct WindowsWindow {
+pub struct WindowsWindow<'a> {
 	pub app_window_class: &'static str,
-	owning_application: *const WindowsApplication,
+	owning_application: &'a mut WindowsApplication<'a>,
 	hwnd: HWND,
 	region_height: i32,
 	region_width: i32,
@@ -59,8 +39,8 @@ pub struct WindowsWindow {
     window_definitions: Rc<WindowDefinition>,
 }
 
-impl WindowsWindow {
-	pub fn new() -> WindowsWindow {
+impl<'a> WindowsWindow<'a> {
+	pub fn new() -> WindowsWindow<'a> {
 		unsafe {
 		    let mut wnd_plcment: WINDOWPLACEMENT = mem::zeroed();
 		    let mut wnd_plcment1: WINDOWPLACEMENT = mem::zeroed();
@@ -84,7 +64,10 @@ impl WindowsWindow {
             }
         }
 	}
-	pub fn initialize(&mut self, application: *const WindowsApplication, definition: Rc<WindowDefinition>, instance: HINSTANCE, parent: &Rc<WindowsWindow>, show_immediately: bool) {
+	pub fn make() -> Rc<WindowsWindow<'a>> {
+		Rc::new(WindowsWindow::new())
+	}
+	pub fn initialize(&mut self, application: &'a mut WindowsApplication<'a>, definition: Rc<WindowDefinition>, instance: HINSTANCE, parent: Option<Rc<WindowsWindow>>, show_immediately: bool) {
 		self.window_definitions = definition;
         self.owning_application = application;
 
@@ -99,15 +82,15 @@ impl WindowsWindow {
 	    let width_initial = self.window_definitions.width_desired_on_screen;
 	    let height_initial = self.window_definitions.height_desired_on_screen;
 
-	    let client_x = x_initial_rect as i32;
-	    let client_y = y_initial_rect as i32;
-	    let client_width = width_initial as i32;
-	    let client_height = height_initial as i32;
+	    let mut client_x = x_initial_rect as i32;
+	    let mut client_y = y_initial_rect as i32;
+	    let mut client_width = width_initial as i32;
+	    let mut client_height = height_initial as i32;
 	    let mut window_x = client_x;
 	    let mut window_y = client_y;
 	    let mut window_width = client_width;
 	    let mut window_height = client_height;
-	    let application_supports_per_pixel_blending = unsafe { (&*application).get_window_transparency_support() == WindowTransparency::PerPixel };
+	    let application_supports_per_pixel_blending = unsafe { application.get_window_transparency_support() == WindowTransparency::PerPixel };
 
 	    if !self.window_definitions.has_os_window_border {
 	    	window_ex_style = WS_EX_WINDOWEDGE;
@@ -177,7 +160,7 @@ impl WindowsWindow {
 		    window_style,
 		    window_x, window_y, 
 		    window_width, window_height,
-		    parent.hwnd,
+		    if parent.is_some() { parent.unwrap().hwnd } else { ptr::null_mut() },
 		    ptr::null_mut(), instance, ptr::null_mut()) };
 
 	    self.virtual_width = client_width;
@@ -187,7 +170,7 @@ impl WindowsWindow {
 	    // in the initial creation of the window. Slate should only pass client area dimensions.
 	    // Reshape window may resize the window if the non-client area is encroaching on our
 	    // desired client area space.
-	    self.reshape_window(client_x, client_y, client_width, client_height);
+	    self.reshape_window(&mut client_x, &mut client_y, &mut client_width, &mut client_height);
 
 	    if self.hwnd.is_null() {
 	    	unsafe {
@@ -204,19 +187,19 @@ impl WindowsWindow {
 	    	self.set_opacity(opacity);
 	    }
 	    if !self.window_definitions.has_os_window_border {
-	    	let rendering_policy: DWMNCRENDERINGPOLICY = DWMNCRP_DISABLED;
+	    	let rendering_policy = DWMNCRP_DISABLED;
 
 	    	unsafe {
-	    		if dwmapi::DwmSetWindowAttribute(self.hwnd, mem::transmute(DWMWA_NCRENDERING_POLICY), mem::transmute(&rendering_policy), mem::size_of::<DWMNCRENDERINGPOLICY>() as u32) != S_OK {
+	    		if super::DwmSetWindowAttribute(self.hwnd, mem::transmute(DWMWA_NCRENDERING_POLICY), mem::transmute(&rendering_policy), mem::size_of::<DWORD>() as u32) != S_OK {
 	    			println!("Warning: {}", io::Error::last_os_error());
 	    		}
 	    		let enable_nc_paint = FALSE;
-	    		if dwmapi::DwmSetWindowAttribute(self.hwnd, mem::transmute(DWMWA_ALLOW_NCPAINT), mem::transmute(&enable_nc_paint), mem::size_of::<BOOL>() as u32) != S_OK {
+	    		if super::DwmSetWindowAttribute(self.hwnd, mem::transmute(DWMWA_ALLOW_NCPAINT), mem::transmute(&enable_nc_paint), mem::size_of::<BOOL>() as u32) != S_OK {
                     println!("Warning: {}", io::Error::last_os_error());
 	    		}
 	    		if application_supports_per_pixel_blending && self.window_definitions.transparency_support == WindowTransparency::PerPixel {
 	    			let mut margins = MARGINS {cxLeftWidth: -1, cxRightWidth: -1, cyTopHeight: -1, cyBottomHeight: -1};
-	    			if dwmapi::DwmExtendFrameIntoClientArea(self.hwnd, &margins) != 0 {
+	    			if super::DwmExtendFrameIntoClientArea(self.hwnd, &margins) != 0 {
                         println!("Warning: {}", io::Error::last_os_error());
 	    			}
 	    		}
@@ -259,7 +242,7 @@ impl WindowsWindow {
 				    unsafe {
 				        let mut window_info: WINDOWINFO = mem::zeroed();
 				        window_info.cbSize = mem::size_of::<WINDOWINFO>() as u32;
-				        user32::GetWindowInfo(self.hwnd, &mut window_info);
+				        super::GetWindowInfo(self.hwnd, &mut window_info);
 
 				        region = gdi32::CreateRectRgn(window_info.cxWindowBorders as i32, window_info.cxWindowBorders as i32, self.region_width + window_info.cxWindowBorders as i32, self.region_height + window_info.cxWindowBorders as i32);
 				    }
@@ -327,7 +310,7 @@ impl WindowsWindow {
             	};
             	let margins: MARGINS = MARGINS {cxLeftWidth: -1, cxRightWidth: -1, cyTopHeight: -1, cyBottomHeight: -1};
 
-            	let res = unsafe { dwmapi::DwmExtendFrameIntoClientArea(self.hwnd, &margins) };
+            	let res = unsafe { super::DwmExtendFrameIntoClientArea(self.hwnd, &margins) };
             	if res != 0 {
             	    println!("Warning: {}", io::Error::last_os_error());
             	}
@@ -344,33 +327,17 @@ impl WindowsWindow {
 		}
 	}
 	pub fn get_aspect_ratio(&self) -> f32 { self.aspect_ratio }
-	/*pub unsafe extern "system" fn query_interface(iid: REFIID, ppvObject: *mut *mut c_void) {
-		//let mut mut_self: *mut c_void = ptr::null_mut();
-		//let mut_self = &mut *(mut_self as *mut Self);
-		let idt = IID_IDropTarget; 
-		let iunkwn = IID_IUnknown;
-        if ole32::IsEqualGUID(&iunkwn, iid) != 0 || ole32::IsEqualGUID(&idt, iid) != 0 {
-            Self::AddRef();
-        }
-	}
-	pub unsafe extern "system" fn AddRef() -> ULONG {
-        let mut mut_self: *mut c_void = ptr::null_mut();
-		let mut_self = &mut *(mut_self as *mut Self);
-		mut_self.ole_reference_count += 1;
-		mut_self.ole_reference_count
-	}
-	let dtvbl: IDropTargetVtbl = IDropTargetVtbl { DragEnter: drag_enter, DragOver: drag_over, DragLeave: drag_leave, Drop: drop };*/
 }
 
-impl GenericWindow for WindowsWindow {
-	fn reshape_window(&mut self, mut new_x: i32, mut new_y: i32, mut new_width: i32, mut new_height: i32) {
+impl<'a> GenericWindow for WindowsWindow<'a> {
+	fn reshape_window(&mut self, new_x: &mut i32, new_y: &mut i32, new_width: &mut i32, new_height: &mut i32) {
 		let mut window_info: WINDOWINFO = unsafe { mem::uninitialized() };
 		unsafe {
 			window_info.cbSize = mem::size_of::<WINDOWINFO>() as u32;
-		    user32::GetWindowInfo(self.hwnd, &mut window_info);
+		    super::GetWindowInfo(self.hwnd, &mut window_info);
 		}
 
-		self.aspect_ratio = new_width as f32 / new_height as f32;
+		self.aspect_ratio = *new_width as f32 / *new_height as f32;
 
 		if self.window_definitions.has_os_window_border {
 			let mut border_rect: RECT = unsafe { mem::zeroed() };
@@ -378,18 +345,18 @@ impl GenericWindow for WindowsWindow {
 				user32::AdjustWindowRectEx(&mut border_rect, window_info.dwStyle, FALSE, window_info.dwExStyle)
 			};
 
-			new_x += border_rect.left;
-			new_y += border_rect.top;
+			*new_x += border_rect.left;
+			*new_y += border_rect.top;
 
-			new_width += border_rect.right - border_rect.left;
-		    new_height += border_rect.bottom - border_rect.top;
+			*new_width += border_rect.right - border_rect.left;
+		    *new_height += border_rect.bottom - border_rect.top;
 		}
 		let window_x = new_x;
 		let window_y = new_y;
 
-		let virtual_size_changed = new_width != self.virtual_width || new_height != self.virtual_height;
-		self.virtual_width = new_width;
-		self.virtual_height = new_height;
+		let virtual_size_changed = *new_width != self.virtual_width || *new_height != self.virtual_height;
+		self.virtual_width = *new_width;
+		self.virtual_height = *new_height;
 		
 		if self.window_definitions.size_will_change_often {
 			let old_window_rect = window_info.rcWindow;
@@ -399,8 +366,8 @@ impl GenericWindow for WindowsWindow {
 		    let min_retained_width = if self.window_definitions.expected_max_width != -1 { self.window_definitions.expected_max_width } else { old_width };
 		    let min_retained_height = if self.window_definitions.expected_max_height != -1 { self.window_definitions.expected_max_height } else { old_height };
 
-		    new_width = cmp::max(new_width, cmp::min(old_width, min_retained_width));
-		    new_height = cmp::max(new_height, cmp::min(old_height, min_retained_height));
+		    *new_width = cmp::max(*new_width, cmp::min(old_width, min_retained_width));
+		    *new_height = cmp::max(*new_height, cmp::min(old_height, min_retained_height));
 		}
 
 		if self.is_maximized() {
@@ -408,7 +375,7 @@ impl GenericWindow for WindowsWindow {
 		}
 
 		unsafe {
-			user32::SetWindowPos(self.hwnd, ptr::null_mut(), window_x, window_y, new_width, new_height, SWP_NOZORDER | SWP_NOACTIVATE | if self.window_mode == WindowMode::Fullscreen { SWP_NOSENDCHANGING } else { 0 });
+			user32::SetWindowPos(self.hwnd, ptr::null_mut(), *window_x, *window_y, *new_width, *new_height, SWP_NOZORDER | SWP_NOACTIVATE | if self.window_mode == WindowMode::Fullscreen { SWP_NOSENDCHANGING } else { 0 });
 		}
 
 		if self.window_definitions.size_will_change_often && virtual_size_changed {
@@ -433,7 +400,7 @@ impl GenericWindow for WindowsWindow {
 		}
 		true
 	}
-	fn move_window_to(&self, mut x: i32, mut y: i32) {
+	fn move_window_to(&self, x: &mut i32, y: &mut i32) {
 		if self.window_definitions.has_os_window_border {
 			unsafe {
 				let window_style = user32::GetWindowLongW(self.hwnd, GWL_STYLE);
@@ -444,10 +411,10 @@ impl GenericWindow for WindowsWindow {
 		        user32::AdjustWindowRectEx(&mut border_rect, window_style as u32, FALSE, window_ex_style as u32);
 
 		        // Border rect size is negative
-		        x += border_rect.left;
-		        y += border_rect.top;
+		        *x += border_rect.left;
+		        *y += border_rect.top;
 
-		        user32::SetWindowPos(self.hwnd, ptr::null_mut(), x, y, 0, 0, SWP_NOACTIVATE | SWP_NOSIZE | SWP_NOZORDER);
+		        user32::SetWindowPos(self.hwnd, ptr::null_mut(), *x, *y, 0, 0, SWP_NOACTIVATE | SWP_NOSIZE | SWP_NOZORDER);
 			}
 		}
 	}
@@ -574,17 +541,17 @@ impl GenericWindow for WindowsWindow {
 			        // to resize if required.
 			        // Else, use the monitor's res for windowed fullscreen.
 			        let monitor_width = monitor_info.rcMonitor.right - monitor_info.rcMonitor.left;
-			        let target_client_width = if true_fullscreen { cmp::min(monitor_width, client_rect.right - client_rect.left) } else { monitor_width };
+			        let mut target_client_width = if true_fullscreen { cmp::min(monitor_width, client_rect.right - client_rect.left) } else { monitor_width };
 
 			        let monitor_height = monitor_info.rcMonitor.bottom - monitor_info.rcMonitor.top;
-			        let target_client_height = if true_fullscreen { cmp::min(monitor_height, client_rect.bottom - client_rect.top) } else { monitor_height };
+			        let mut target_client_height = if true_fullscreen { cmp::min(monitor_height, client_rect.bottom - client_rect.top) } else { monitor_height };
 
      			    // Resize and position fullscreen window
 			        self.reshape_window(
-				        monitor_info.rcMonitor.left,
-				        monitor_info.rcMonitor.top,
-				        target_client_width,
-				        target_client_height
+				        &mut monitor_info.rcMonitor.left,
+				        &mut monitor_info.rcMonitor.top,
+				        &mut target_client_width,
+				        &mut target_client_height
 				    );
 			    }
 		    } else {
@@ -665,7 +632,7 @@ impl GenericWindow for WindowsWindow {
 	    unsafe {
 	    	let mut window_info: WINDOWINFO = mem::uninitialized();
 	        window_info.cbSize = mem::size_of::<WINDOWINFO>() as u32;
-	        user32::GetWindowInfo(self.hwnd, &mut window_info);
+	        super::GetWindowInfo(self.hwnd, &mut window_info);
 
 	        window_info.cxWindowBorders
 	    }
@@ -683,8 +650,8 @@ impl GenericWindow for WindowsWindow {
     	//TODO: genericize the text variable
     	unsafe { user32::SetWindowTextW(self.hwnd, text.as_ptr()); }
     }
-    fn get_definition<'a>(&'a self) -> &'a WindowDefinition {
-    	&self.window_definitions
+    fn get_definition(&self) -> Rc<WindowDefinition> {
+    	self.window_definitions.clone()
     }
     fn adjust_cached_size(&self, size: &mut (i32, i32)) {
 		//Unreal Engine 4's check for if the FGenericWindowDefinition is valid is necessary because this is a pointer. Is it necessary in my code?
