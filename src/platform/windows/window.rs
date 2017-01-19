@@ -22,9 +22,9 @@ pub const APP_WINDOW_CLASS: &'static str = "CormacWindow";
 
 //TODO can I make this capable of clone? I want to try this so I don't have to do a clone in the WindowsApplication::find_window_by_hwnd method.
 #[derive(PartialEq, Debug)]
-pub struct WindowsWindow<'a> {
+pub struct WindowsWindow {
 	pub app_window_class: &'static str,
-	pub owning_application: &'a WindowsApplication<'a>,
+	pub owning_application: *mut WindowsApplication,
 	hwnd: HWND,
 	region_height: i32,
 	region_width: i32,
@@ -39,8 +39,8 @@ pub struct WindowsWindow<'a> {
     window_definitions: Rc<WindowDefinition>,
 }
 
-impl<'a> WindowsWindow<'a> {
-	pub fn new() -> WindowsWindow<'a> {
+impl WindowsWindow {
+	pub fn new() -> WindowsWindow {
 		unsafe {
 		    let mut wnd_plcment: WINDOWPLACEMENT = mem::zeroed();
 		    let mut wnd_plcment1: WINDOWPLACEMENT = mem::zeroed();
@@ -64,15 +64,17 @@ impl<'a> WindowsWindow<'a> {
             }
         }
 	}
-	pub fn make() -> Rc<RefCell<WindowsWindow<'a>>> {
+	pub fn make() -> Rc<RefCell<WindowsWindow>> {
 		println!("WindowsWindow::make");
 		Rc::new(RefCell::new(WindowsWindow::new()))
 	}
-	pub fn initialize(&mut self, application: &'a WindowsApplication<'a>, definition: &Rc<WindowDefinition>, instance: HINSTANCE, parent: Option<Rc<WindowsWindow>>, show_immediately: bool) {
+	pub fn initialize(&mut self, application: &WindowsApplication, definition: &Rc<WindowDefinition>, instance: HINSTANCE, parent: Option<Rc<WindowsWindow>>, show_immediately: bool) {
 		println!("Just reach in initialize");
 		self.window_definitions = definition.clone();
 		println!("Assigning window_definitions");
-        self.owning_application = application;
+        self.owning_application = unsafe {
+        	mem::transmute(application)
+        };
         println!("Assigned window_definitions and owning_application");
 
         let mut window_ex_style: u32 = 0;
@@ -335,7 +337,7 @@ impl<'a> WindowsWindow<'a> {
 	pub fn get_aspect_ratio(&self) -> f32 { self.aspect_ratio }
 }
 
-impl<'a> GenericWindow for WindowsWindow<'a> {
+impl GenericWindow for WindowsWindow {
 	fn reshape_window(&mut self, new_x: &mut i32, new_y: &mut i32, new_width: &mut i32, new_height: &mut i32) {
 		let mut window_info: WINDOWINFO = unsafe { mem::uninitialized() };
 		unsafe {

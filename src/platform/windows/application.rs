@@ -220,14 +220,14 @@ pub enum ModifierKey {
 
 //TODO implement GenericApplication trait. Also most likely trait based on IForceFeedbackSystem.
 #[derive(PartialEq, Debug)]
-pub struct WindowsApplication<'a> {
+pub struct WindowsApplication {
     cursor: Rc<WindowsCursor>,
 	minimized_window_position: IntPoint2,
 	instance_handle: HINSTANCE,
     using_high_precision_mouse_input: bool,
     is_mouse_attached: bool,
     force_activate_by_mouse: bool,
-    pub windows: RefCell<Vec<Rc<RefCell<WindowsWindow<'a>>>>>,
+    pub windows: RefCell<Vec<Rc<RefCell<WindowsWindow>>>>,
     //modifier_key_state: [bool; ModifierKey::Count as usize],
     in_modal_size_loop: bool,
     display_metrics: DisplayMetrics,
@@ -236,7 +236,7 @@ pub struct WindowsApplication<'a> {
     //startup_filter_keys: FILTERKEYS,
 }
 
-impl<'a> WindowsApplication<'a> {
+impl WindowsApplication {
     /*fn allow_accessibility_shortcut_keys(&mut self, allow_keys: bool) {
         unsafe {
             if allow_keys {
@@ -284,7 +284,7 @@ impl<'a> WindowsApplication<'a> {
             WINDOWS_APPLICATION
         }
     }*/
-    pub fn new(hinstance: HINSTANCE, hicon: HICON) -> WindowsApplication<'a> {
+    pub fn new(hinstance: HINSTANCE, hicon: HICON) -> WindowsApplication {
         let cursor = Rc::new(WindowsCursor::new());
         println!("Cursor made");
         let minimized_window_position = IntPoint2::new(-32000, -32000);
@@ -324,10 +324,10 @@ impl<'a> WindowsApplication<'a> {
         winapp.query_connected_mice();
         winapp
     }
-    pub fn make_window(&self) -> Rc<RefCell<WindowsWindow<'a>>> {
+    pub fn make_window(&self) -> Rc<RefCell<WindowsWindow>> {
         WindowsWindow::make()
     }
-    pub fn initialize_window(&'a self, window: Rc<RefCell<WindowsWindow<'a>>>, definition: &Rc<WindowDefinition>, parent: Option<Rc<WindowsWindow<'a>>>, show_immediately: bool) {
+    pub fn initialize_window(&self, window: Rc<RefCell<WindowsWindow>>, definition: &Rc<WindowDefinition>, parent: Option<Rc<WindowsWindow>>, show_immediately: bool) {
         println!("Inside initialize_window");
         println!("self address is {:p}", self);
         println!("window address is {:p}", window);
@@ -382,7 +382,7 @@ impl<'a> WindowsApplication<'a> {
 	    if is_composition_enabled != 0 { WindowTransparency::PerPixel } else { WindowTransparency::PerWindow }
     }
      //TODO the return signature for this method feels wrong.
-    pub fn find_window_by_hwnd(&self, windows_to_search: &Vec<Rc<RefCell<WindowsWindow<'a>>>>, handle_to_find: HWND) -> Option<Rc<RefCell<WindowsWindow<'a>>>> {
+    pub fn find_window_by_hwnd(&self, windows_to_search: &Vec<Rc<RefCell<WindowsWindow>>>, handle_to_find: HWND) -> Option<Rc<RefCell<WindowsWindow>>> {
         for window in windows_to_search {
             if window.borrow().get_hwnd() == handle_to_find {
                 return Some(window.clone());
@@ -725,10 +725,10 @@ impl<'a> WindowsApplication<'a> {
     unsafe extern "system" fn app_wnd_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
         println!("in app_wnd_proc, msg is {0}, {:#06x} ({})", msg, if let Some(msg_str) = super::WINDOWS_MESSAGE_STRINGS.get(&msg) { msg_str } else { "Not found" });
         //ensure( IsInGameThread() );
-        let mut window: *mut WindowsApplication = ptr::null_mut();
+        let mut window: *mut WindowsWindow = ptr::null_mut();
         if msg == WM_NCCREATE || msg == WM_CREATE {
             let cs: &CREATESTRUCTW = mem::transmute(lparam);
-            window = (*cs).lpCreateParams as *mut WindowsApplication;
+            window = (*cs).lpCreateParams as *mut WindowsWindow;
             utils::set_window_long_ptr(hwnd, GWLP_USERDATA, window).unwrap();
             //(*window).hwnd = wnd as HWND;
         } else {
@@ -738,10 +738,11 @@ impl<'a> WindowsApplication<'a> {
                 user32::GetWindowLongPtrW(hwnd, GWLP_USERDATA)
             };
             println!("got temp_window at {}", temp_window);
-            window = temp_window as *mut WindowsApplication;
+            window = temp_window as *mut WindowsWindow;
         }
 
-       (*window).process_message(hwnd, msg, wparam, lparam) as i64
+        let ref mut mutwin = (*window); 
+       (*mutwin.owning_application).process_message(hwnd, msg, wparam, lparam) as i64
     }
 }
 
