@@ -8,7 +8,7 @@ use winapi::{BOOL, FALSE, HCURSOR, IDC_ARROW, IDC_CROSS, IDC_HAND, IDC_IBEAM, ID
 
 type FloatVec2 = Vector2<f32>;
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 pub struct WindowsCursor {
 	pub current_type: MouseCursor,
     pub cursor_handles: [HCURSOR; 15],
@@ -16,9 +16,12 @@ pub struct WindowsCursor {
 
 impl WindowsCursor {
 	pub fn new() -> WindowsCursor {
+		println!("Creating WindowsCursor");
 		unsafe {
 		    let mut windows_cursor: WindowsCursor = mem::uninitialized();
+		    println!("mem::uninitialized() didn't cause the crash");
 		    for i in 0..15 {
+		    	println!("Iteration number {} in MouseCursor::new()", i);
 		    	windows_cursor.cursor_handles[i] = ptr::null_mut();
 		    	let mut cursor_handle: HCURSOR = ptr::null_mut();
 		    	match MouseCursor::from_usize(i) {
@@ -52,29 +55,33 @@ impl WindowsCursor {
 		    		},
 		    		//TODO
 		    		MouseCursor::GrabHand => {
-		    			cursor_handle = user32::LoadCursorFromFileW(OsStr::new(r"F:\Programs\Epic Games\4.13\Engine\Content\Editor\Slate\Cursor\grabhand.cur").encode_wide().chain(Some(0).into_iter()).collect::<Vec<u16>>().as_ptr());
+		    			cursor_handle = user32::LoadCursorFromFileW(OsStr::new(r"F:\Programs\Epic Games\4.14\Engine\Content\Editor\Slate\Cursor\grabhand.cur").encode_wide().chain(Some(0).into_iter()).collect::<Vec<u16>>().as_ptr());
 		    			if cursor_handle.is_null() {
 				            // Failed to load file, fall back
 				            cursor_handle = user32::LoadCursorW(ptr::null_mut(), IDC_HAND);
 			            }
+			            println!("Got ma cursor");
 		    		},
 		    		MouseCursor::GrabHandClosed => {
-		    			cursor_handle = user32::LoadCursorFromFileW(OsStr::new(r"F:\Programs\Epic Games\4.13\Engine\Content\Editor\Slate\Cursor\grabhand_closed.cur").encode_wide().chain(Some(0).into_iter()).collect::<Vec<u16>>().as_ptr());
+		    			cursor_handle = user32::LoadCursorFromFileW(OsStr::new(r"F:\Programs\Epic Games\4.14\Engine\Content\Editor\Slate\Cursor\grabhand_closed.cur").encode_wide().chain(Some(0).into_iter()).collect::<Vec<u16>>().as_ptr());
 		    			if cursor_handle.is_null() {
 				            // Failed to load file, fall back
 				            cursor_handle = user32::LoadCursorW(ptr::null_mut(), IDC_HAND);
 			            }
+			            println!("Got ma cursor");
 		    		},
 		    		MouseCursor::SlashedCircle => {
 		    			cursor_handle = user32::LoadCursorW(ptr::null_mut(), IDC_NO);
 		    		},
 		    		MouseCursor::EyeDropper => {
-		    			cursor_handle = user32::LoadCursorFromFileW(OsStr::new(r"F:\Programs\Epic Games\4.13\Engine\Content\Editor\Slate\Cursor\eyedropper.cur").encode_wide().chain(Some(0).into_iter()).collect::<Vec<u16>>().as_ptr());
+		    			cursor_handle = user32::LoadCursorFromFileW(OsStr::new(r"F:\Programs\Epic Games\4.14\Engine\Content\Editor\Slate\Cursor\eyedropper.cur").encode_wide().chain(Some(0).into_iter()).collect::<Vec<u16>>().as_ptr());
+		    			println!("Got ma cursor");
 		    		}
 		    	}
 		    	windows_cursor.cursor_handles[i] = cursor_handle;
 		    }
             windows_cursor.set_type(MouseCursor::Default);
+            println!("About to return dat MouseCursor");
             windows_cursor
 		}
 	}

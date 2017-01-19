@@ -7,6 +7,7 @@ extern crate lazy_static;
 extern crate cgmath;
 extern crate dwmapi;
 extern crate gdi32;
+extern crate kernel32;
 extern crate ole32;
 extern crate setupapi;
 extern crate user32;

@@ -35,7 +35,7 @@ pub enum PopUpOrientation {
 
 //TODO ModifierKeysState struct
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 pub struct PlatformRect {
 	pub left: i32,
 	pub top: i32,
@@ -43,7 +43,7 @@ pub struct PlatformRect {
 	pub bottom: i32,
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 pub struct MonitorInfo {
 	pub name: String,
 	pub id: String,

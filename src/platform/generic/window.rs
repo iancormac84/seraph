@@ -2,7 +2,7 @@ use platform::generic::window_definition::WindowDefinition;
 use std::os::raw::c_void;
 use std::rc::Rc;
 
-#[derive(PartialEq, Copy, Clone)]
+#[derive(PartialEq, Copy, Clone, Debug)]
 pub enum WindowMode {
 	/** The window is in true fullscreen mode */
 	Fullscreen,

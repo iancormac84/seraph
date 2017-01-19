@@ -16,7 +16,7 @@ pub enum MouseButtons {
 }
 
 //I came across a similar implementation in the Github repository https://github.com/coeuvre/hammer-rs.git
-#[derive(PartialEq, Clone)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct WindowSizeLimits {
 	pub min_width: Option<f32>,
 	pub min_height: Option<f32>,

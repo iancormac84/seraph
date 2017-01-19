@@ -3,10 +3,10 @@ use gdi32;
 use platform::generic::window::{GenericWindow, WindowMode};
 use platform::generic::window_definition::{WindowDefinition, WindowTransparency, WindowType};
 use platform::windows::application::WindowsApplication;
+use platform::windows::utils::ToWide;
+use std::cell::RefCell;
 use std::{cmp, io, mem, ptr};
-use std::ffi::OsStr;
 use std::os::raw::c_void;
-use std::os::windows::ffi::OsStrExt;
 use std::rc::Rc;
 use super::{DWMNCRP_DISABLED, DWMWA_ALLOW_NCPAINT, DWMWA_NCRENDERING_POLICY, MARGINS, WINDOWINFO};
 use user32;
@@ -21,10 +21,10 @@ use winapi::{
 pub const APP_WINDOW_CLASS: &'static str = "CormacWindow";
 
 //TODO can I make this capable of clone? I want to try this so I don't have to do a clone in the WindowsApplication::find_window_by_hwnd method.
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 pub struct WindowsWindow<'a> {
 	pub app_window_class: &'static str,
-	owning_application: &'a mut WindowsApplication<'a>,
+	pub owning_application: &'a WindowsApplication<'a>,
 	hwnd: HWND,
 	region_height: i32,
 	region_width: i32,
@@ -60,16 +60,20 @@ impl<'a> WindowsWindow<'a> {
                 virtual_width: mem::uninitialized(),
                 aspect_ratio: 1.0f32,
                 is_visible: false,
-                window_definitions: mem::uninitialized(),
+                window_definitions: Rc::new(WindowDefinition::default()),
             }
         }
 	}
-	pub fn make() -> Rc<WindowsWindow<'a>> {
-		Rc::new(WindowsWindow::new())
+	pub fn make() -> Rc<RefCell<WindowsWindow<'a>>> {
+		println!("WindowsWindow::make");
+		Rc::new(RefCell::new(WindowsWindow::new()))
 	}
-	pub fn initialize(&mut self, application: &'a mut WindowsApplication<'a>, definition: Rc<WindowDefinition>, instance: HINSTANCE, parent: Option<Rc<WindowsWindow>>, show_immediately: bool) {
-		self.window_definitions = definition;
+	pub fn initialize(&mut self, application: &'a WindowsApplication<'a>, definition: &Rc<WindowDefinition>, instance: HINSTANCE, parent: Option<Rc<WindowsWindow>>, show_immediately: bool) {
+		println!("Just reach in initialize");
+		self.window_definitions = definition.clone();
+		println!("Assigning window_definitions");
         self.owning_application = application;
+        println!("Assigned window_definitions and owning_application");
 
         let mut window_ex_style: u32 = 0;
         let mut window_style: u32 = 0;
@@ -90,7 +94,7 @@ impl<'a> WindowsWindow<'a> {
 	    let mut window_y = client_y;
 	    let mut window_width = client_width;
 	    let mut window_height = client_height;
-	    let application_supports_per_pixel_blending = unsafe { application.get_window_transparency_support() == WindowTransparency::PerPixel };
+	    let application_supports_per_pixel_blending = application.get_window_transparency_support() == WindowTransparency::PerPixel;
 
 	    if !self.window_definitions.has_os_window_border {
 	    	window_ex_style = WS_EX_WINDOWEDGE;
@@ -153,16 +157,18 @@ impl<'a> WindowsWindow<'a> {
 	    }
 
 	    //TODO: parent window may be null, but I'm using Rc to hold parent window, which I think implies that parent window can't be null. Fix.
-	    self.hwnd = unsafe { user32::CreateWindowExW(
-		    window_ex_style,
-		    OsStr::new(self.app_window_class).encode_wide().chain(Some(0).into_iter()).collect::<Vec<u16>>().as_ptr(),
-		    OsStr::new(&self.window_definitions.title[..]).encode_wide().chain(Some(0).into_iter()).collect::<Vec<u16>>().as_ptr(),
-		    window_style,
-		    window_x, window_y, 
-		    window_width, window_height,
-		    if parent.is_some() { parent.unwrap().hwnd } else { ptr::null_mut() },
-		    ptr::null_mut(), instance, ptr::null_mut()) };
+	    println!("self.hwnd is {:p}", self.hwnd);
+	    self.hwnd = unsafe {
+	        user32::CreateWindowExW(
+		        window_ex_style,
+		        self.app_window_class.to_wide_null().as_ptr(),
+		        (&self.window_definitions.title[..]).to_wide_null().as_ptr(),
+		        window_style, window_x, window_y, window_width, window_height,
+		        if parent.is_some() { parent.unwrap().hwnd } else { ptr::null_mut() },
+		        ptr::null_mut(), instance, self.owning_application as *const _ as *const c_void as *mut c_void)
+	    };
 
+        println!("CreateWindowExW called");
 	    self.virtual_width = client_width;
 	    self.virtual_height = client_height;
 
@@ -175,8 +181,8 @@ impl<'a> WindowsWindow<'a> {
 	    if self.hwnd.is_null() {
 	    	unsafe {
 	    		user32::MessageBoxW(ptr::null_mut(),
-	    		    OsStr::new(&"Window Creation Failed!").encode_wide().chain(Some(0).into_iter()).collect::<Vec<u16>>().as_ptr(),
-	    		    OsStr::new(&"Error!").encode_wide().chain(Some(0).into_iter()).collect::<Vec<u16>>().as_ptr(),
+	    		    "Window Creation Failed!".to_wide_null().as_ptr(),
+	    		    "Error!".to_wide_null().as_ptr(),
 	    		    MB_ICONEXCLAMATION | MB_OK
 	    	    );
 	    	}

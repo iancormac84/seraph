@@ -6,15 +6,15 @@ use platform::generic::application_message_handler::{ApplicationMessageHandler, 
 use platform::generic::window::GenericWindow;
 use platform::generic::window_definition::{WindowDefinition, WindowTransparency, WindowType};
 use platform::windows::cursor::WindowsCursor;
+use platform::windows::utils;
+use platform::windows::utils::ToWide;
 use platform::windows::window::{APP_WINDOW_CLASS, WindowsWindow};
 use platform::windows::xinputinterface::XInputInterface;
 use setupapi;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
-use std::ffi::OsStr;
 use std::io::Error;
 use std::os::raw::c_void;
-use std::os::windows::ffi::OsStrExt;
 use std::{mem, ptr};
 use std::rc::{Rc, Weak};
 use super::{
@@ -23,8 +23,8 @@ use super::{
 };
 use user32;
 use winapi::{
-    c_short, CR_SUCCESS, CS_DBLCLKS, DICS_FLAG_GLOBAL, DIGCF_PRESENT, DIREG_DEV, DISPLAY_DEVICE_ACTIVE, DISPLAY_DEVICE_ATTACHED_TO_DESKTOP, DISPLAY_DEVICE_MIRRORING_DRIVER,
-    DISPLAY_DEVICE_PRIMARY_DEVICE, DISPLAY_DEVICEW, DWORD, ERROR_NO_MORE_ITEMS, FALSE, GWL_STYLE,
+    c_short, CREATESTRUCTW, CR_SUCCESS, CS_DBLCLKS, DICS_FLAG_GLOBAL, DIGCF_PRESENT, DIREG_DEV, DISPLAY_DEVICE_ACTIVE, DISPLAY_DEVICE_ATTACHED_TO_DESKTOP, DISPLAY_DEVICE_MIRRORING_DRIVER,
+    DISPLAY_DEVICE_PRIMARY_DEVICE, DISPLAY_DEVICEW, DWORD, ERROR_NO_MORE_ITEMS, FALSE, GWLP_USERDATA, GWL_STYLE,
     GWL_EXSTYLE, HDEVINFO, HICON, HINSTANCE, HIWORD, HKEY, HMONITOR,
     HRAWINPUT, HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCAPTION, HTCLIENT, HTCLOSE, HTLEFT, HTMINBUTTON, HTMAXBUTTON, HTNOWHERE, HTRIGHT, HTSYSMENU, HTTOP, HTTOPLEFT, HTTOPRIGHT, HWND,
     INVALID_HANDLE_VALUE, KEY_READ, LOWORD, LPARAM, LPNCCALCSIZE_PARAMS,
@@ -37,20 +37,20 @@ use winapi::{
     WM_DEVICECHANGE, WM_DISPLAYCHANGE, WM_GETDLGCODE, WM_DWMCOMPOSITIONCHANGED, WM_ERASEBKGND, WM_ENTERSIZEMOVE, WM_EXITSIZEMOVE, WM_GETMINMAXINFO, WM_INPUT,
     WM_INPUT_DEVICE_CHANGE, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDBLCLK, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEHOVER,
     WM_MOUSEHWHEEL,
-    WM_MOUSELEAVE, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCACTIVATE, WM_NCCALCSIZE, WM_NCMOUSEHOVER, WM_NCMOUSELEAVE, WM_NCMOUSEMOVE, WM_NCMBUTTONDBLCLK, WM_NCLBUTTONDOWN, WM_NCMBUTTONDOWN, WM_NCMBUTTONUP, WM_NCRBUTTONDBLCLK, WM_NCRBUTTONDOWN,
+    WM_MOUSELEAVE, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCACTIVATE, WM_NCCALCSIZE, WM_NCCREATE, WM_NCMOUSEHOVER, WM_NCMOUSELEAVE, WM_NCMOUSEMOVE, WM_NCMBUTTONDBLCLK, WM_NCLBUTTONDOWN, WM_NCMBUTTONDOWN, WM_NCMBUTTONUP, WM_NCRBUTTONDBLCLK, WM_NCRBUTTONDOWN,
     WM_NCRBUTTONUP, WM_NCXBUTTONDBLCLK, WM_NCXBUTTONDOWN, WM_NCXBUTTONUP, WM_XBUTTONDBLCLK, WM_XBUTTONDOWN, WM_XBUTTONUP, WM_SYSCHAR,
     WM_SYSKEYDOWN, WM_SYSCOMMAND, WM_IME_CHAR,
     WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION, WM_IME_NOTIFY, WM_IME_REQUEST, WM_IME_SETCONTEXT, WM_IME_STARTCOMPOSITION, WM_INPUTLANGCHANGE, WM_INPUTLANGCHANGEREQUEST, WM_MOVE,
     WM_NCHITTEST, WM_NCPAINT, WM_PAINT,
     WM_RBUTTONDBLCLK, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR, WM_SETTINGCHANGE, WM_SHOWWINDOW, WM_SIZE, WM_SIZING, WM_SYSKEYUP, WM_TOUCH, WMSZ_BOTTOM, WMSZ_BOTTOMLEFT,
     WMSZ_BOTTOMRIGHT, WMSZ_LEFT,
-    WMSZ_RIGHT, WMSZ_TOP, WMSZ_TOPLEFT, WMSZ_TOPRIGHT, WNDCLASSW, WPARAM, WVR_VALIDRECTS
+    WMSZ_RIGHT, WMSZ_TOP, WMSZ_TOPLEFT, WMSZ_TOPRIGHT, WNDCLASSEXW, WPARAM, WVR_VALIDRECTS
 };
 use winreg::RegKey;
 
 type IntPoint2 = Point2<i32>;
 
-static mut WINDOWS_APPLICATION: *mut WindowsApplication<'static> = ptr::null_mut();
+//static mut WINDOWS_APPLICATION: *mut WindowsApplication<'static> = ptr::null_mut();
 
 //const MINIMIZED_WINDOW_POSITION: IntPoint2 = IntPoint2::new(-32000,-32000);
 
@@ -219,7 +219,7 @@ pub enum ModifierKey {
 }
 
 //TODO implement GenericApplication trait. Also most likely trait based on IForceFeedbackSystem.
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 pub struct WindowsApplication<'a> {
     cursor: Rc<WindowsCursor>,
 	minimized_window_position: IntPoint2,
@@ -227,8 +227,8 @@ pub struct WindowsApplication<'a> {
     using_high_precision_mouse_input: bool,
     is_mouse_attached: bool,
     force_activate_by_mouse: bool,
-    pub windows: Vec<Rc<RefCell<WindowsWindow<'a>>>>,
-    modifier_key_state: [bool; ModifierKey::Count as usize],
+    pub windows: RefCell<Vec<Rc<RefCell<WindowsWindow<'a>>>>>,
+    //modifier_key_state: [bool; ModifierKey::Count as usize],
     in_modal_size_loop: bool,
     display_metrics: DisplayMetrics,
     //startup_sticky_keys: STICKYKEYS,
@@ -276,68 +276,96 @@ impl<'a> WindowsApplication<'a> {
                 }
             }
         }
-    }*/
+    }
     pub fn create_windows_application(hinstance: HINSTANCE, hicon: HICON) -> *mut WindowsApplication<'static> {
         let mut app = WindowsApplication::new(hinstance, hicon);
         unsafe {
             WINDOWS_APPLICATION = &mut app;
             WINDOWS_APPLICATION
         }
-    }
+    }*/
     pub fn new(hinstance: HINSTANCE, hicon: HICON) -> WindowsApplication<'a> {
+        let cursor = Rc::new(WindowsCursor::new());
+        println!("Cursor made");
+        let minimized_window_position = IntPoint2::new(-32000, -32000);
+        println!("IntPoint2 made");
+        let instance_handle = hinstance;
+        println!("HINSTANCE grabbed");
+        let using_high_precision_mouse_input = false;
+        println!("using_high_precision_mouse_input made");
+        let is_mouse_attached = false;
+        println!("is_mouse_attached made");
+        let force_activate_by_mouse = false;
+        println!("force_activate_by_mouse made");
+        let windows = RefCell::new(vec![]);
+        println!("windows made");
+        let in_modal_size_loop = false;
+        println!("in_modal_size_loop made");
+        let display_metrics = DisplayMetrics::new();
+        println!("display_metrics made");
         let mut winapp = WindowsApplication {
-            cursor: Rc::new(WindowsCursor::new()),
-            minimized_window_position: IntPoint2::new(-32000, -32000),
-            instance_handle: hinstance,
-            using_high_precision_mouse_input: false,
-            is_mouse_attached: false,
-            force_activate_by_mouse: false,
-            windows: vec![],
-            modifier_key_state: unsafe { mem::zeroed() },
-            in_modal_size_loop: false,
-            display_metrics: DisplayMetrics::new(),
+            cursor: cursor,
+            minimized_window_position: minimized_window_position,
+            instance_handle: instance_handle,
+            using_high_precision_mouse_input: using_high_precision_mouse_input,
+            is_mouse_attached: is_mouse_attached,
+            force_activate_by_mouse: force_activate_by_mouse,
+            windows: windows,
+            //modifier_key_state: unsafe { mem::zeroed() },
+            in_modal_size_loop: in_modal_size_loop,
+            display_metrics: display_metrics,
             //startup_sticky_keys: STICKYKEYS,
             //startup_toggle_keys: TOGGLEKEYS,
             //startup_filter_keys: FILTERKEYS,
         };
+        println!("Successed created winapp");
         let class_registered = winapp.register_class(hinstance, hicon);
+        println!("Have we registered class? {}", class_registered);
         winapp.query_connected_mice();
         winapp
     }
-    pub fn make_window() -> Rc<WindowsWindow<'a>> {
+    pub fn make_window(&self) -> Rc<RefCell<WindowsWindow<'a>>> {
         WindowsWindow::make()
     }
-    pub fn initialize_window(&'a mut self, window: Rc<RefCell<WindowsWindow<'a>>>, definition: Rc<WindowDefinition>, parent: Option<Rc<WindowsWindow<'a>>>, show_immediately: bool) {
-        self.windows.push(window);
-        let len = self.windows.len();
-        //let pself = &mut self;
-        self.windows[len - 1].borrow_mut().initialize(self, definition, self.instance_handle, parent, show_immediately);
-        /*window.initialize(self, definition, self.instance_handle, parent, show_immediately);
-        self.windows.push(window);*/
+    pub fn initialize_window(&'a self, window: Rc<RefCell<WindowsWindow<'a>>>, definition: &Rc<WindowDefinition>, parent: Option<Rc<WindowsWindow<'a>>>, show_immediately: bool) {
+        println!("Inside initialize_window");
+        println!("self address is {:p}", self);
+        println!("window address is {:p}", window);
+        self.windows.borrow_mut().push(window);
+        let len = self.windows.borrow().len();
+        let inst = self.instance_handle;
+        let ref windx = self.windows.borrow()[len - 1];
+        let mut borrow_window = windx.borrow_mut();
+        println!("about to call initialize on dat window");
+        println!("definition address is {:p}", definition);
+        borrow_window.initialize(self, definition, inst, parent, show_immediately);
     } 
     fn register_class(&self, hinstance: HINSTANCE, hicon: HICON) -> bool {
         unsafe {
-            let mut wc: WNDCLASSW = mem::zeroed();
-            wc.style = CS_DBLCLKS; // We want to receive double clicks
-            wc.lpfnWndProc = Some(Self::app_wnd_proc);
-            wc.cbClsExtra = 0;
-            wc.cbWndExtra = 0;
-            wc.hInstance = hinstance;
-            wc.hIcon = hicon;
-            wc.hCursor = ptr::null_mut();  // We manage the cursor ourselves
-            wc.hbrBackground = ptr::null_mut(); // Transparent
-            wc.lpszMenuName = ptr::null_mut();
-            wc.lpszClassName = OsStr::new(APP_WINDOW_CLASS).encode_wide().chain(Some(0).into_iter()).collect::<Vec<u16>>().as_ptr();
+            let wc = WNDCLASSEXW {
+                cbSize: mem::size_of::<WNDCLASSEXW>() as u32,
+                style: CS_DBLCLKS, // We want to receive double clicks
+                lpfnWndProc: Some(Self::app_wnd_proc),
+                cbClsExtra: 0,
+                cbWndExtra: 0,
+                hInstance: hinstance,
+                hIcon: hicon,
+                hCursor: ptr::null_mut(),  // We manage the cursor ourselves
+                hbrBackground: ptr::null_mut(), // Transparent
+                lpszMenuName: ptr::null_mut(),
+                lpszClassName: APP_WINDOW_CLASS.to_wide_null().as_ptr(),
+                hIconSm: ptr::null_mut(),
+            };
 
-            if user32::RegisterClassW(&wc) == 0 {
+            if user32::RegisterClassExW(&wc) == 0 {
                 //ShowLastError();
 
                 // @todo Slate: Error message should be localized!
                 //FSlowHeartBeatScope SuspendHeartBeat;
                 user32::MessageBoxW(
                     ptr::null_mut(),
-                    OsStr::new("Window Registration Failed!").encode_wide().chain(Some(0).into_iter()).collect::<Vec<u16>>().as_ptr(),
-                    OsStr::new("Error!").encode_wide().chain(Some(0).into_iter()).collect::<Vec<u16>>().as_ptr(),
+                    "Window Registration Failed!".to_wide_null().as_ptr(),
+                    "Error!".to_wide_null().as_ptr(),
                     MB_ICONEXCLAMATION | MB_OK
                 );
 
@@ -368,7 +396,7 @@ impl<'a> WindowsApplication<'a> {
             let got_point = user32::GetCursorPos(&mut cursor_pos);
             if got_point != 0 {
                 let hwnd: HWND = user32::WindowFromPoint(cursor_pos);
-                let window_under_cursor = self.find_window_by_hwnd(&self.windows, hwnd);
+                let window_under_cursor = self.find_window_by_hwnd(&self.windows.borrow(), hwnd);
                 return window_under_cursor.is_some();
             }
         }
@@ -439,12 +467,41 @@ impl<'a> WindowsApplication<'a> {
     }
     pub fn process_message(&mut self, hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> i32 {
         unsafe {
-            let mut current_native_event_window_opt = self.find_window_by_hwnd(&self.windows, hwnd);
+            let mut current_native_event_window_opt = self.find_window_by_hwnd(&self.windows.borrow(), hwnd);
 
-            if self.windows.len() != 0 && current_native_event_window_opt.is_some() {
+            if self.windows.borrow().len() != 0 && current_native_event_window_opt.is_some() {
                 let mut current_native_event_window = current_native_event_window_opt.unwrap();
 
                 match msg {
+                    WM_GETMINMAXINFO => {
+                        let mut min_max_info: MINMAXINFO = {
+                            let mmi = mem::transmute::<LPARAM, *const MINMAXINFO>(lparam);
+                            *mmi
+                        };
+                        let ref size_limits: WindowSizeLimits = current_native_event_window.borrow().get_definition().size_limits;
+
+                        // We need to inflate the max values if using an OS window border
+                        let mut border_width: i32 = 0;
+                        let mut border_height: i32 = 0;
+                        if current_native_event_window.borrow().get_definition().has_os_window_border {
+                            let window_style = user32::GetWindowLongW(hwnd, GWL_STYLE);
+                            let window_ex_style = user32::GetWindowLongW(hwnd, GWL_EXSTYLE);
+
+                            // This adjusts a zero rect to give us the size of the border
+                            let mut border_rect: RECT = mem::zeroed();
+                            user32::AdjustWindowRectEx(&mut border_rect, window_style as u32, FALSE, window_ex_style as u32);
+
+                            border_width = border_rect.right - border_rect.left;
+                            border_height = border_rect.bottom - border_rect.top;
+                        }
+
+                        // We always apply BorderWidth and BorderHeight since Slate always works with client area window sizes
+                        min_max_info.ptMinTrackSize.x = size_limits.get_min_width().unwrap_or(min_max_info.ptMinTrackSize.x as f32) as i32;
+                        min_max_info.ptMinTrackSize.y = size_limits.get_min_height().unwrap_or(min_max_info.ptMinTrackSize.y as f32) as i32;
+                        min_max_info.ptMaxTrackSize.x = size_limits.get_max_width().unwrap_or(min_max_info.ptMaxTrackSize.x as f32) as i32 + border_width;
+                        min_max_info.ptMaxTrackSize.y = size_limits.get_max_height().unwrap_or(min_max_info.ptMaxTrackSize.y as f32) as i32 + border_height;
+                        return 0;
+                    },
                     WM_NCCALCSIZE => {
                         // Let windows absorb this message if using the standard border
                         if wparam != 0 && !current_native_event_window.borrow().get_definition().has_os_window_border {
@@ -554,7 +611,7 @@ impl<'a> WindowsApplication<'a> {
                         }
                     },
                     WM_DESTROY => {
-                        self.windows.retain(|ref x| **x != current_native_event_window);
+                        self.windows.borrow_mut().retain(|ref x| **x != current_native_event_window);
                         return 0;
                     },
                     _ => {}
@@ -643,7 +700,7 @@ impl<'a> WindowsApplication<'a> {
             self.is_mouse_attached = mouse_count > 0;
         }
     }
-    fn update_all_modifier_key_states(&mut self) {
+    /*fn update_all_modifier_key_states(&mut self) {
         unsafe { 
             self.modifier_key_state[ModifierKey::LeftShift as usize]       = (user32::GetAsyncKeyState(VK_LSHIFT) & 0x8000) != 0;
             self.modifier_key_state[ModifierKey::RightShift as usize]      = (user32::GetAsyncKeyState(VK_RSHIFT) & 0x8000) != 0;
@@ -653,7 +710,7 @@ impl<'a> WindowsApplication<'a> {
             self.modifier_key_state[ModifierKey::RightAlt as usize]        = (user32::GetAsyncKeyState(VK_RMENU) & 0x8000) != 0;
             self.modifier_key_state[ModifierKey::CapsLock as usize]        = (user32::GetKeyState(VK_CAPITAL) & 0x0001) != 0;
         }
-    }
+    }*/
     fn pump_messages(&self, time_delta: f32) {
         unsafe {
             let mut message: MSG = mem::zeroed();
@@ -666,14 +723,31 @@ impl<'a> WindowsApplication<'a> {
         }
     }
     unsafe extern "system" fn app_wnd_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+        println!("in app_wnd_proc, msg is {0}, {:#06x} ({})", msg, if let Some(msg_str) = super::WINDOWS_MESSAGE_STRINGS.get(&msg) { msg_str } else { "Not found" });
         //ensure( IsInGameThread() );
+        let mut window: *mut WindowsApplication = ptr::null_mut();
+        if msg == WM_NCCREATE || msg == WM_CREATE {
+            let cs: &CREATESTRUCTW = mem::transmute(lparam);
+            window = (*cs).lpCreateParams as *mut WindowsApplication;
+            utils::set_window_long_ptr(hwnd, GWLP_USERDATA, window).unwrap();
+            //(*window).hwnd = wnd as HWND;
+        } else {
+            println!("HWND is {:p}", hwnd);
+            //let temp_window = utils::get_window_long_ptr::<*const WindowsApplication>(hwnd, GWLP_USERDATA).unwrap();
+            let temp_window = unsafe {
+                user32::GetWindowLongPtrW(hwnd, GWLP_USERDATA)
+            };
+            println!("got temp_window at {}", temp_window);
+            window = temp_window as *mut WindowsApplication;
+        }
 
-        (&mut *WINDOWS_APPLICATION).process_message(hwnd, msg, wparam, lparam) as i64
+       (*window).process_message(hwnd, msg, wparam, lparam) as i64
     }
 }
 
 fn get_monitor_size_from_edid(h_dev_reg_key: RegKey, out_width: &mut i32, out_height: &mut i32) -> bool {
     for (name, value) in h_dev_reg_key.enum_values().map(|x| x.unwrap()) {
+        println!("name is {}, value is {:?}", name, value);
         if &name[..] != "EDID" {
             continue;
         } else {
@@ -683,7 +757,9 @@ fn get_monitor_size_from_edid(h_dev_reg_key: RegKey, out_width: &mut i32, out_he
             let detail_timing_descriptor_start_index: usize = 54;
             
             *out_width = ((value.bytes[detail_timing_descriptor_start_index + 4] as i32 >> 4) << 8) | value.bytes[detail_timing_descriptor_start_index + 2] as i32;
+            println!("out_width is {}", *out_width);
             *out_height = ((value.bytes[detail_timing_descriptor_start_index + 7] as i32 >> 4) << 8) | value.bytes[detail_timing_descriptor_start_index + 5] as i32;
+            println!("out_height is {}", *out_height);
 
             return true; // valid EDID found
         }
@@ -798,7 +874,7 @@ fn get_monitor_info(out_monitor_info: &mut Vec<MonitorInfo>) {
 }
 
 //TODO this struct has cross-platform applications, so it shouldn't be implemented within the Windows-specific files.
-#[derive(PartialEq)] 
+#[derive(PartialEq, Debug)] 
 pub struct DisplayMetrics {
     primary_display_width: i32,
     primary_display_height: i32,
@@ -815,35 +891,43 @@ impl DisplayMetrics {
     pub fn new() -> DisplayMetrics {
         unsafe {
             let mut out_display_metrics: DisplayMetrics = mem::uninitialized();
+            println!("mem::uninitialized() caused the problem");
             // Total screen size of the primary monitor
             out_display_metrics.primary_display_width = user32::GetSystemMetrics(SM_CXSCREEN);
+            println!("Got primary display width");
             out_display_metrics.primary_display_height = user32::GetSystemMetrics(SM_CYSCREEN);
+            println!("Got primary display height");
 
             // Get the screen rect of the primary monitor, excluding taskbar etc.
             let mut work_area_rect: RECT = mem::zeroed();
-            if user32::SystemParametersInfoW(SPI_GETWORKAREA, 0, mem::transmute(&mut work_area_rect), 0) == 0 {
+            if user32::SystemParametersInfoW(SPI_GETWORKAREA, 0, &mut work_area_rect as *mut _ as *mut c_void, 0) == 0 {
                 work_area_rect.top = 0;
                 work_area_rect.bottom = 0;
                 work_area_rect.left = 0;
                 work_area_rect.right = 0;
             }
+            println!("filled out work_area_rect");
 
             out_display_metrics.primary_display_work_area_rect.left = work_area_rect.left;
             out_display_metrics.primary_display_work_area_rect.top = work_area_rect.top;
             out_display_metrics.primary_display_work_area_rect.right = work_area_rect.right;
             out_display_metrics.primary_display_work_area_rect.bottom = work_area_rect.bottom;
+            println!("out_display_metrics filled with work_area_rect");
     
             // Virtual desktop area
             out_display_metrics.virtual_display_rect.left = user32::GetSystemMetrics(SM_XVIRTUALSCREEN);
             out_display_metrics.virtual_display_rect.top = user32::GetSystemMetrics(SM_YVIRTUALSCREEN);
             out_display_metrics.virtual_display_rect.right = out_display_metrics.virtual_display_rect.left + user32::GetSystemMetrics(SM_CXVIRTUALSCREEN);
             out_display_metrics.virtual_display_rect.bottom = out_display_metrics.virtual_display_rect.top + user32::GetSystemMetrics(SM_CYVIRTUALSCREEN);
+            println!("out_display_metrics got system metrics");
 
             // Get connected monitor information
             get_monitor_info(&mut out_display_metrics.monitor_info);
+            println!("get_monitor_info returned Successfully");
 
             // Apply the debug safe zones
             out_display_metrics.apply_default_safe_zones();
+            println!("DisplayMetrics about to return");
             out_display_metrics
         }
     }

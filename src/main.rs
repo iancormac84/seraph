@@ -36,16 +36,20 @@ fn main() {
         opacity: 1.0,	
         corner_radius: 1,
         size_limits: WindowSizeLimits {
-        	min_width: Some(50.0),
-	        min_height: Some(50.0),
-	        max_width: Some(1366.0),
-	        max_height: Some(705.0),
+        	min_width: None,
+	        min_height: None,
+	        max_width: None,
+	        max_height: None,
         },
     };
+    println!("Made WindowDefinition");
     let icon = unsafe {
     	user32::LoadImageW(ptr::null_mut(), IDI_APPLICATION as LPCWSTR, 1, 0, 0, 0x00008000) as HICON
     };
-    let application = WindowsApplication::create_windows_application(ptr::null_mut(), icon);
+    println!("Made icon");
+    let application = WindowsApplication::new(ptr::null_mut(), icon);
+    println!("Made application");
     let new_window = application.make_window();
-    application.initialize_window(new_window, Rc::new(wd), None, true);
+    println!("Made new_window");
+    application.initialize_window(new_window, &Rc::new(wd), None, true);
 }
