@@ -100,48 +100,62 @@ impl WindowsWindow {
 
 	    if !self.window_definitions.has_os_window_border {
 	    	window_ex_style = WS_EX_WINDOWEDGE;
+			println!("This shouldn't be showing up. But it did. WS_EX_WINDOWEDGE is {0}, window_ex_style is {0}", window_ex_style);
 
 	    	if self.window_definitions.transparency_support == WindowTransparency::PerWindow {
 	    		window_ex_style |= WS_EX_LAYERED;
+				println!("This shouldn't be showing up. But it did. WS_EX_LAYERED is {}, window_ex_style is {}", WS_EX_LAYERED, window_ex_style);
 	    	} else if self.window_definitions.transparency_support == WindowTransparency::PerPixel {
 	    		if application_supports_per_pixel_blending {
 	    			window_ex_style |= WS_EX_COMPOSITED;
+					println!("This shouldn't be showing up. But it did. WS_EX_COMPOSITED is {}, window_ex_style is {}", WS_EX_COMPOSITED, window_ex_style);
 	    		}
 	    	}
 	    	window_style = WS_POPUP | WS_CLIPCHILDREN | WS_CLIPSIBLINGS;
 	    	if self.window_definitions.appears_in_taskbar {
 	    		window_ex_style |= WS_EX_APPWINDOW;
+				println!("This shouldn't be showing up. But it did. WS_EX_APPWINDOW is {}, window_ex_style is {}", WS_EX_APPWINDOW, window_ex_style);
 	    	} else {
 	    		window_ex_style |= WS_EX_TOOLWINDOW;
+				println!("This shouldn't be showing up. But it did. WS_EX_TOOLWINDOW is {}, window_ex_style is {}", WS_EX_TOOLWINDOW, window_ex_style);
 	    	}
 	    	if self.window_definitions.is_topmost_window {
 	    		// Tool tips are always top most windows
 			    window_ex_style |= WS_EX_TOPMOST;
+				println!("This shouldn't be showing up. But it did. WS_EX_TOPMOST is {}, window_ex_style is {}", WS_EX_TOPMOST, window_ex_style);
 	    	}
 	    	if !self.window_definitions.accepts_input {
 	    		// Window should never get input
 			    window_ex_style |= WS_EX_TRANSPARENT;
+				println!("This shouldn't be showing up. But it did. WS_EX_TRANSPARENT is {}, window_ex_style is {}", WS_EX_TRANSPARENT, window_ex_style);
 	    	}
 	    } else {
 	    	// OS Window border setup
 		    window_ex_style = WS_EX_APPWINDOW;
+			println!("This should be showing up. And it did. WS_EX_APPWINDOW is {}, window_ex_style is {}", WS_EX_APPWINDOW, window_ex_style);
 		    window_style = WS_OVERLAPPED | WS_SYSMENU | WS_CAPTION;
+			println!("window_style is {}. WS_OVERLAPPED is {}, WS_SYSMENU is {}, and WS_CAPTION is {}", window_style, WS_OVERLAPPED, WS_SYSMENU, WS_CAPTION);
 		    if self.is_regular_window() {
 		    	if self.window_definitions.supports_maximize {
 				    window_style |= WS_MAXIMIZEBOX;
+					println!("window_style is {}. WS_MAXIMIZEBOX is {}", window_style, WS_MAXIMIZEBOX);
 			    }
 
 			    if self.window_definitions.supports_minimize {
 				    window_style |= WS_MINIMIZEBOX;
+					println!("window_style is {}. WS_MINIMIZEBOX is {}", window_style, WS_MINIMIZEBOX);
 			    }
 
 			    if self.window_definitions.has_sizing_frame	{
 				    window_style |= WS_THICKFRAME;
+					println!("window_style is {}. WS_THICKFRAME is {}", window_style, WS_THICKFRAME);
 			    } else {
 				    window_style |= WS_BORDER;
+					println!("window_style is {}. WS_BORDER is {}", window_style, WS_BORDER);
 			    }
 		    } else {
 			    window_style |= WS_POPUP | WS_BORDER;
+			    println!("window_style is {}. WS_POPUP is {}. WS_BORDER is {}", window_style, WS_POPUP, WS_BORDER);
 		    }
 
 		    // X,Y, Width, Height defines the top-left pixel of the client area on the screen
@@ -159,8 +173,11 @@ impl WindowsWindow {
 	    }
 
 	    //TODO: parent window may be null, but I'm using Rc to hold parent window, which I think implies that parent window can't be null. Fix.
-	    println!("self.hwnd is {:p}", self.hwnd);
-	    self.hwnd = unsafe {
+	    println!("self is {:p}", self);
+		println!("self.hwnd is {:p}", self.hwnd);
+	    println!("self.owning_application is {:p}", self.owning_application);
+	    println!("window_ex_style is {}", window_ex_style);
+	    let hwnd = unsafe {
 	        user32::CreateWindowExW(
 		        window_ex_style,
 		        self.app_window_class.to_wide_null().as_ptr(),
@@ -169,6 +186,8 @@ impl WindowsWindow {
 		        if parent.is_some() { parent.unwrap().hwnd } else { ptr::null_mut() },
 		        ptr::null_mut(), instance, ptr::null_mut())
 	    };
+	    println!("hwnd is {:p}", hwnd);
+	    self.hwnd = hwnd;
 
         println!("CreateWindowExW called");
 	    self.virtual_width = client_width;
@@ -183,7 +202,7 @@ impl WindowsWindow {
 	    if self.hwnd.is_null() {
 	    	unsafe {
 	    		user32::MessageBoxW(ptr::null_mut(),
-	    		    "Window Creation Failed!".to_wide_null().as_ptr(),
+	    		    format!("Window Creation Failed! {}", io::Error::last_os_error()).to_wide_null().as_ptr(),
 	    		    "Error!".to_wide_null().as_ptr(),
 	    		    MB_ICONEXCLAMATION | MB_OK
 	    	    );

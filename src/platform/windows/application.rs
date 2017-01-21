@@ -45,7 +45,7 @@ use winapi::{
     WM_NCHITTEST, WM_NCPAINT, WM_PAINT,
     WM_RBUTTONDBLCLK, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR, WM_SETTINGCHANGE, WM_SHOWWINDOW, WM_SIZE, WM_SIZING, WM_SYSKEYUP, WM_TOUCH, WMSZ_BOTTOM, WMSZ_BOTTOMLEFT,
     WMSZ_BOTTOMRIGHT, WMSZ_LEFT,
-    WMSZ_RIGHT, WMSZ_TOP, WMSZ_TOPLEFT, WMSZ_TOPRIGHT, WNDCLASSEXW, WPARAM, WVR_VALIDRECTS
+    WMSZ_RIGHT, WMSZ_TOP, WMSZ_TOPLEFT, WMSZ_TOPRIGHT, WNDCLASSW, WPARAM, WVR_VALIDRECTS
 };
 use winreg::RegKey;
 
@@ -246,7 +246,7 @@ pub struct WindowsApplication {
     using_high_precision_mouse_input: bool,
     is_mouse_attached: bool,
     force_activate_by_mouse: bool,
-    pub windows: RefCell<Vec<Rc<RefCell<WindowsWindow>>>>,
+    pub windows: Vec<Rc<RefCell<WindowsWindow>>>,
     //modifier_key_state: [bool; ModifierKey::Count as usize],
     in_modal_size_loop: bool,
     display_metrics: DisplayMetrics,
@@ -305,7 +305,7 @@ impl WindowsApplication {
             using_high_precision_mouse_input: false,
             is_mouse_attached: false,
             force_activate_by_mouse: false,
-            windows: RefCell::new(vec![]),
+            windows: vec![],
             //modifier_key_state: unsafe { mem::zeroed() },
             in_modal_size_loop: false,
             display_metrics: display_metrics,
@@ -322,24 +322,24 @@ impl WindowsApplication {
     pub fn make_window(&self) -> Rc<RefCell<WindowsWindow>> {
         WindowsWindow::make()
     }
-    pub fn initialize_window(&self, window: Rc<RefCell<WindowsWindow>>, definition: &Rc<WindowDefinition>, parent: Option<Rc<WindowsWindow>>, show_immediately: bool) {
+    pub fn initialize_window(&mut self, window: Rc<RefCell<WindowsWindow>>, definition: &Rc<WindowDefinition>, parent: Option<Rc<WindowsWindow>>, show_immediately: bool) {
         println!("Inside initialize_window");
         println!("self address is {:p}", self);
+        println!("self.windows address is {:p}", &self.windows);
         println!("window address is {:p}", window);
-        self.windows.borrow_mut().push(window);
+        self.windows.push(window);
         println!("The push to the windows vec isn't what caused the panic");
-        let len = self.windows.borrow().len();
+        let len = self.windows.len();
         let inst = self.instance_handle;
-        let ref windx = self.windows.borrow()[len - 1];
-        let mut borrow_window = windx.borrow_mut();
+        //let ref windx = self.windows.borrow()[len - 1];
+        //let mut borrow_window = windx.borrow_mut();
         println!("about to call initialize on dat window");
         println!("definition address is {:p}", definition);
-        borrow_window.initialize(self, definition, inst, parent, show_immediately);
+        self.windows[len - 1].borrow_mut().initialize(self, definition, inst, parent, show_immediately);
     } 
     fn register_class(&self, hinstance: HINSTANCE, hicon: HICON) -> bool {
         unsafe {
-            let wc = WNDCLASSEXW {
-                cbSize: mem::size_of::<WNDCLASSEXW>() as u32,
+            let wc = WNDCLASSW {
                 style: CS_DBLCLKS, // We want to receive double clicks
                 lpfnWndProc: Some(Self::app_wnd_proc),
                 cbClsExtra: 0,
@@ -350,10 +350,9 @@ impl WindowsApplication {
                 hbrBackground: ptr::null_mut(), // Transparent
                 lpszMenuName: ptr::null_mut(),
                 lpszClassName: APP_WINDOW_CLASS.to_wide_null().as_ptr(),
-                hIconSm: ptr::null_mut(),
             };
 
-            if user32::RegisterClassExW(&wc) == 0 {
+            if user32::RegisterClassW(&wc) == 0 {
                 //ShowLastError();
 
                 // @todo Slate: Error message should be localized!
@@ -392,7 +391,7 @@ impl WindowsApplication {
             let got_point = user32::GetCursorPos(&mut cursor_pos);
             if got_point != 0 {
                 let hwnd: HWND = user32::WindowFromPoint(cursor_pos);
-                let window_under_cursor = self.find_window_by_hwnd(&self.windows.borrow(), hwnd);
+                let window_under_cursor = self.find_window_by_hwnd(&self.windows, hwnd);
                 return window_under_cursor.is_some();
             }
         }
@@ -464,9 +463,9 @@ impl WindowsApplication {
     pub fn process_message(&mut self, hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> i32 {
         println!("Reached inside process_message");
         unsafe {
-            let mut current_native_event_window_opt = self.find_window_by_hwnd(&self.windows.borrow(), hwnd);
+            let mut current_native_event_window_opt = self.find_window_by_hwnd(&self.windows, hwnd);
 
-            if self.windows.borrow().len() != 0 && current_native_event_window_opt.is_some() {
+            if self.windows.len() != 0 && current_native_event_window_opt.is_some() {
                 let mut current_native_event_window = current_native_event_window_opt.unwrap();
 
                 match msg {
@@ -608,7 +607,7 @@ impl WindowsApplication {
                         }
                     },
                     WM_DESTROY => {
-                        self.windows.borrow_mut().retain(|ref x| **x != current_native_event_window);
+                        self.windows.retain(|ref x| **x != current_native_event_window);
                         return 0;
                     },
                     _ => {}

@@ -1,3 +1,4 @@
+extern crate kernel32;
 extern crate seraph;
 extern crate user32;
 extern crate winapi;
@@ -48,9 +49,11 @@ fn main() {
     	user32::LoadImageW(ptr::null_mut(), IDI_APPLICATION as LPCWSTR, 1, 0, 0, 0x00008000) as HICON
     };
     println!("Made icon");
-    let application = get_windows_application(ptr::null_mut(), icon);
+    let application = get_windows_application(unsafe { kernel32::GetModuleHandleW(ptr::null_mut()) }, icon);
     println!("Made application");
-    let new_window = WindowsWindow::make();
+    let new_window = unsafe {
+        (&*application).make_window()
+    };
     println!("Made new_window. new_window address is {:p}", new_window);
     unsafe {
         (&mut *application).initialize_window(new_window, &Rc::new(wd), None, true);
