@@ -1,3 +1,5 @@
+#[cfg(debug_assertions)]
+use kernel32;
 use std::collections::BTreeMap;
 use std::{io, process};
 use std::io::Write;

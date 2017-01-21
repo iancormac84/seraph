@@ -49,8 +49,12 @@ fn main() {
     };
     println!("Made icon");
     let application = create_windows_application(unsafe { kernel32::GetModuleHandleW(ptr::null_mut()) }, icon);
-    println!("Made application");
+    println!("Made application. address is {:p}", application);
     unsafe {
-        (&mut *application).initialize_window(&Rc::new(wd), None, true);
+        let rc_window = (&*application).make_window();
+        println!("rc_window is {:p}", rc_window);
+        println!("&rc_window is {:p}", &rc_window);
+        (&mut *application).initialize_window(&rc_window, &Rc::new(wd), None, true);
+        (&mut *application).pump_messages(0.0);
     }
 }

@@ -327,16 +327,16 @@ impl WindowsApplication {
         winapp.query_connected_mice();
         winapp
     }
-    /*pub fn make_window(&self) -> Rc<RefCell<WindowsWindow>> {
+    pub fn make_window(&self) -> Rc<RefCell<WindowsWindow>> {
         WindowsWindow::make()
-    }*/
-    pub fn initialize_window(&mut self, definition: &Rc<WindowDefinition>, parent: Option<Rc<WindowsWindow>>, show_immediately: bool) {
+    }
+    pub fn initialize_window(&mut self, window: &Rc<RefCell<WindowsWindow>>, definition: &Rc<WindowDefinition>, parent: Option<Rc<WindowsWindow>>, show_immediately: bool) {
         println!("Inside initialize_window");
         let inst = self.instance_handle;
         println!("about to call initialize on dat window");
-        println!("definition address is {:p}", definition);
+        self.windows.push(window.clone());
         println!("self.windows.len() is {}", self.windows.len());
-        self.windows.push(Rc::new(RefCell::new(WindowsWindow::initialize(definition, inst, parent, show_immediately))));
+        window.borrow_mut().initialize(definition, inst, parent, show_immediately);
     } 
     fn register_class(&self, hinstance: HINSTANCE, hicon: HICON) -> bool {
         unsafe {
@@ -470,6 +470,7 @@ impl WindowsApplication {
         unsafe {
             println!("About to find window by hwnd");
             println!("hwnd is {:p}", hwnd);
+            println!("self is {:p}", self);
             let mut current_native_event_window_opt = self.find_window_by_hwnd(&self.windows, hwnd);
             println!("Found window. {:?}", current_native_event_window_opt);
 
@@ -715,7 +716,7 @@ impl WindowsApplication {
             self.modifier_key_state[ModifierKey::CapsLock as usize]        = (user32::GetKeyState(VK_CAPITAL) & 0x0001) != 0;
         }
     }*/
-    fn pump_messages(&self, time_delta: f32) {
+    pub fn pump_messages(&self, time_delta: f32) {
         unsafe {
             let mut message: MSG = mem::zeroed();
 
