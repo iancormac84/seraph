@@ -19,6 +19,10 @@ impl<T> ToWide for T where T: AsRef<OsStr> {
     }
 }
 
+pub fn other_error<T>(msg: &str) -> io::Result<T> {
+    Err(io::Error::new(io::ErrorKind::Other, msg))
+}
+
 pub fn leak<T>(v: T) -> &'static T {
     unsafe {
         println!("Inside utils::leak");

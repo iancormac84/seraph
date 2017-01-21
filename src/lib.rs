@@ -1,9 +1,9 @@
 #![feature(const_fn)]
 #![allow(dead_code, non_snake_case, non_camel_case_types)]
-#[macro_use]
-extern crate bitflags;
-#[macro_use]
-extern crate lazy_static;
+#[macro_use] extern crate bitflags;
+#[macro_use] extern crate conv;
+#[macro_use] extern crate custom_derive;
+#[macro_use] extern crate lazy_static;
 extern crate cgmath;
 extern crate dwmapi;
 extern crate gdi32;

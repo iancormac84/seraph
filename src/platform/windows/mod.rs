@@ -1,9 +1,13 @@
 use std::collections::BTreeMap;
+use std::{io, process};
+use std::io::Write;
 use winapi;
 use winapi::{ATOM, BOOL, DWORD, HRESULT, HWND, INT, LPCVOID, LPVOID, RECT, UINT, WORD};
 
 pub mod application;
 pub mod cursor;
+pub mod dialog;
+#[macro_use] pub mod macros;
 pub mod utils;
 pub mod window;
 pub mod xinputinterface;
@@ -440,4 +444,21 @@ lazy_static! {
         result.insert(winapi::WM_DWMNCRENDERINGCHANGED, "WM_DWMNCRENDERINGCHANGED");
         result
     };
+}
+
+#[cfg(not(debug_assertions))]
+pub fn wui_abort(msg: &str, title: Option<&str>) -> ! {
+    let _ = writeln!(io::stderr(), "{}", msg);
+    let _ = dialog::message_box(None, msg, title, Some(0x10));
+    process::exit(1);
+}
+
+#[cfg(debug_assertions)]
+pub fn wui_abort(msg: &str, title: Option<&str>) -> ! {
+    unsafe {
+        let _ = writeln!(io::stderr(), "{}", msg);
+        let _ = title;
+        kernel32::DebugBreak();
+        process::exit(1);
+    }
 }

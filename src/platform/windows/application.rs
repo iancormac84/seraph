@@ -18,6 +18,7 @@ use std::os::raw::c_void;
 use std::{mem, ptr};
 use std::rc::{Rc, Weak};
 use std::sync::{Mutex, Once, ONCE_INIT};
+use std::sync::atomic::{AtomicUsize, ATOMIC_USIZE_INIT, Ordering};
 use super::{
   DLGC_WANTALLKEYS, FILTERKEYS, FKF_CONFIRMHOTKEY, FKF_FILTERKEYSON, FKF_HOTKEYACTIVE, IMN_CHANGECANDIDATE, IMN_CLOSECANDIDATE, IMN_CLOSESTATUSWINDOW, IMN_GUIDELINE, IMN_OPENCANDIDATE, IMN_OPENSTATUSWINDOW, IMN_PRIVATE, IMN_SETCANDIDATEPOS, IMN_SETCOMPOSITIONFONT, IMN_SETCOMPOSITIONWINDOW, IMN_SETCONVERSIONMODE, IMN_SETOPENSTATUS, IMN_SETSENTENCEMODE, IMN_SETSTATUSWINDOWPOS, IMR_CANDIDATEWINDOW, IMR_COMPOSITIONFONT, IMR_COMPOSITIONWINDOW, IMR_CONFIRMRECONVERTSTRING, IMR_DOCUMENTFEED, IMR_QUERYCHARPOSITION, IMR_RECONVERTSTRING,
   SKF_CONFIRMHOTKEY, SKF_HOTKEYACTIVE, SKF_STICKYKEYSON, STICKYKEYS, TKF_CONFIRMHOTKEY, TKF_HOTKEYACTIVE, TKF_TOGGLEKEYSON, TOGGLEKEYS, WINDOWINFO
@@ -52,8 +53,11 @@ use winreg::RegKey;
 type IntPoint2 = Point2<i32>;
 
 static mut WINDOWS_APPLICATION: *mut WindowsApplication = ptr::null_mut();
+static STATE: AtomicUsize = ATOMIC_USIZE_INIT;
 
-//const MINIMIZED_WINDOW_POSITION: IntPoint2 = IntPoint2::new(-32000,-32000);
+const UNINITIALIZED: usize = 0;
+const INITIALIZING: usize = 1;
+const INITIALIZED: usize = 2;
 
 lazy_static! {
     static ref WINDOWS_MESSAGE_STRINGS: BTreeMap<u32, &'static str> = {
@@ -219,19 +223,23 @@ pub enum ModifierKey {
     Count = 7,
 }
 
-pub fn get_windows_application(hinstance: HINSTANCE, hicon: HICON) -> *mut WindowsApplication {
+pub fn application_ptr() -> *mut WindowsApplication {
+    unsafe { unsafe { WINDOWS_APPLICATION } }
+}
+
+pub fn create_windows_application(hinstance: HINSTANCE, hicon: HICON) -> *mut WindowsApplication {
     unsafe {
         println!("WINDOWS_APPLICATION address is {:p}", WINDOWS_APPLICATION);
         if WINDOWS_APPLICATION.is_null() {
             println!("About to call create_windows_application because WINDOWS_APPLICATION is null");
-            create_windows_application(hinstance, hicon);
+            init_windows_application(hinstance, hicon);
         }
         println!("WINDOWS_APPLICATION address is now {:p}", WINDOWS_APPLICATION);
         WINDOWS_APPLICATION
     }
 }
 
-unsafe fn create_windows_application(hinstance: HINSTANCE, hicon: HICON) {
+unsafe fn init_windows_application(hinstance: HINSTANCE, hicon: HICON) {
     let mut app = utils::leak(WindowsApplication::new(hinstance, hicon));
     println!("app address is {:p}", &app);
     WINDOWS_APPLICATION = &mut app as *mut _ as *mut WindowsApplication;
@@ -319,23 +327,16 @@ impl WindowsApplication {
         winapp.query_connected_mice();
         winapp
     }
-    pub fn make_window(&self) -> Rc<RefCell<WindowsWindow>> {
+    /*pub fn make_window(&self) -> Rc<RefCell<WindowsWindow>> {
         WindowsWindow::make()
-    }
-    pub fn initialize_window(&mut self, window: Rc<RefCell<WindowsWindow>>, definition: &Rc<WindowDefinition>, parent: Option<Rc<WindowsWindow>>, show_immediately: bool) {
+    }*/
+    pub fn initialize_window(&mut self, definition: &Rc<WindowDefinition>, parent: Option<Rc<WindowsWindow>>, show_immediately: bool) {
         println!("Inside initialize_window");
-        println!("self address is {:p}", self);
-        println!("self.windows address is {:p}", &self.windows);
-        println!("window address is {:p}", window);
-        self.windows.push(window);
-        println!("The push to the windows vec isn't what caused the panic");
-        let len = self.windows.len();
         let inst = self.instance_handle;
-        //let ref windx = self.windows.borrow()[len - 1];
-        //let mut borrow_window = windx.borrow_mut();
         println!("about to call initialize on dat window");
         println!("definition address is {:p}", definition);
-        self.windows[len - 1].borrow_mut().initialize(self, definition, inst, parent, show_immediately);
+        println!("self.windows.len() is {}", self.windows.len());
+        self.windows.push(Rc::new(RefCell::new(WindowsWindow::initialize(definition, inst, parent, show_immediately))));
     } 
     fn register_class(&self, hinstance: HINSTANCE, hicon: HICON) -> bool {
         unsafe {
@@ -378,7 +379,11 @@ impl WindowsApplication {
     }
      //TODO the return signature for this method feels wrong.
     pub fn find_window_by_hwnd(&self, windows_to_search: &Vec<Rc<RefCell<WindowsWindow>>>, handle_to_find: HWND) -> Option<Rc<RefCell<WindowsWindow>>> {
+        println!("Inside find_window_by_hwnd, handle_to_find is {:p}", handle_to_find);
+        println!("windows_to_search.len() is {}", windows_to_search.len());
         for window in windows_to_search {
+            println!("window is {:p} and {:#?}", window, window);
+            println!("window.borrow().get_hwnd() is {:p}", window.borrow().get_hwnd());
             if window.borrow().get_hwnd() == handle_to_find {
                 return Some(window.clone());
             }
@@ -463,7 +468,10 @@ impl WindowsApplication {
     pub fn process_message(&mut self, hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> i32 {
         println!("Reached inside process_message");
         unsafe {
+            println!("About to find window by hwnd");
+            println!("hwnd is {:p}", hwnd);
             let mut current_native_event_window_opt = self.find_window_by_hwnd(&self.windows, hwnd);
+            println!("Found window. {:?}", current_native_event_window_opt);
 
             if self.windows.len() != 0 && current_native_event_window_opt.is_some() {
                 let mut current_native_event_window = current_native_event_window_opt.unwrap();
@@ -850,7 +858,7 @@ fn get_monitor_info(out_monitor_info: &mut Vec<MonitorInfo>) {
 }
 
 //TODO this struct has cross-platform applications, so it shouldn't be implemented within the Windows-specific files.
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct DisplayMetrics {
     primary_display_width: i32,
     primary_display_height: i32,

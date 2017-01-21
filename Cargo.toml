@@ -9,6 +9,8 @@ path = "E:/Devel/resources/cgmath"
 [dependencies]
 advapi32-sys = "0.2.0"
 bitflags = "0.7.0"
+conv = "*"
+custom_derive = "*"
 dwmapi-sys = "0.1.0"
 gdi32-sys = "0.2.0"
 kernel32-sys = "0.2.2"

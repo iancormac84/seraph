@@ -3,16 +3,17 @@ use gdi32;
 use platform::generic::window::{GenericWindow, WindowMode};
 use platform::generic::window_definition::{WindowDefinition, WindowTransparency, WindowType};
 use platform::windows::application::WindowsApplication;
+use platform::windows::application::application_ptr;
 use platform::windows::utils::ToWide;
 use std::cell::RefCell;
-use std::{cmp, io, mem, ptr};
+use std::{cmp, io, mem, panic, ptr};
+use std::error::Error;
 use std::os::raw::c_void;
 use std::rc::Rc;
 use super::{DWMNCRP_DISABLED, DWMWA_ALLOW_NCPAINT, DWMWA_NCRENDERING_POLICY, MARGINS, WINDOWINFO};
 use user32;
 use winapi::{
-	BOOL, DWORD, FALSE, GWL_EXSTYLE, GWL_STYLE, HINSTANCE, HRESULT, HRGN, HWND, HWND_TOP,
-	HWND_TOPMOST, LWA_ALPHA, MB_ICONEXCLAMATION, MB_OK, MONITORINFO, MONITOR_DEFAULTTOPRIMARY, MONITOR_DEFAULTTONEAREST, POINTL,
+	BOOL, DWORD, FALSE, GWL_EXSTYLE, GWL_STYLE, HINSTANCE, HMENU, HRESULT, HRGN, HWND, HWND_TOP, HWND_TOPMOST, INT, LPVOID, LPCWSTR, LWA_ALPHA, MB_ICONEXCLAMATION, MB_OK, MONITORINFO, MONITOR_DEFAULTTOPRIMARY, MONITOR_DEFAULTTONEAREST, POINTL,
 	RECT, SM_CYCAPTION, SW_HIDE, SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, SW_SHOW, SW_SHOWNA, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOREDRAW,
 	SWP_NOSENDCHANGING, SWP_NOSIZE, SWP_NOZORDER, S_OK, WINDOWPLACEMENT, WS_BORDER, WS_CAPTION, WS_CLIPCHILDREN, WS_CLIPSIBLINGS, WS_EX_APPWINDOW,
 	WS_EX_COMPOSITED, WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_EX_WINDOWEDGE, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_OVERLAPPED, WS_POPUP, WS_SYSMENU, WS_THICKFRAME
@@ -40,7 +41,7 @@ pub struct WindowsWindow {
 }
 
 impl WindowsWindow {
-	pub fn new() -> WindowsWindow {
+	/*pub fn new() -> WindowsWindow {
 		unsafe {
 		    let mut wnd_plcment: WINDOWPLACEMENT = mem::zeroed();
 		    let mut wnd_plcment1: WINDOWPLACEMENT = mem::zeroed();
@@ -67,26 +68,18 @@ impl WindowsWindow {
 	pub fn make() -> Rc<RefCell<WindowsWindow>> {
 		println!("WindowsWindow::make");
 		Rc::new(RefCell::new(WindowsWindow::new()))
-	}
-	pub fn initialize(&mut self, application: &WindowsApplication, definition: &Rc<WindowDefinition>, instance: HINSTANCE, parent: Option<Rc<WindowsWindow>>, show_immediately: bool) {
+	}*/
+	pub fn initialize(definition: &Rc<WindowDefinition>, instance: HINSTANCE, parent: Option<Rc<WindowsWindow>>, show_immediately: bool) -> WindowsWindow {
 		println!("Just reach in initialize");
-		self.window_definitions = definition.clone();
-		println!("Assigning window_definitions");
-        self.owning_application = unsafe {
-        	mem::transmute(application)
-        };
-        println!("Assigned window_definitions and owning_application");
-
+		
         let mut window_ex_style: u32 = 0;
         let mut window_style: u32 = 0;
-        self.region_width = -1;
-        self.region_height = -1;
 
-        let x_initial_rect = self.window_definitions.x_desired_position_on_screen;
-	    let y_initial_rect = self.window_definitions.y_desired_position_on_screen;
+        let x_initial_rect = definition.x_desired_position_on_screen;
+	    let y_initial_rect = definition.y_desired_position_on_screen;
 
-	    let width_initial = self.window_definitions.width_desired_on_screen;
-	    let height_initial = self.window_definitions.height_desired_on_screen;
+	    let width_initial = definition.width_desired_on_screen;
+	    let height_initial = definition.height_desired_on_screen;
 
 	    let mut client_x = x_initial_rect as i32;
 	    let mut client_y = y_initial_rect as i32;
@@ -96,35 +89,35 @@ impl WindowsWindow {
 	    let mut window_y = client_y;
 	    let mut window_width = client_width;
 	    let mut window_height = client_height;
-	    let application_supports_per_pixel_blending = application.get_window_transparency_support() == WindowTransparency::PerPixel;
+	    let application_supports_per_pixel_blending = unsafe { (*application_ptr()).get_window_transparency_support() } == WindowTransparency::PerPixel;
 
-	    if !self.window_definitions.has_os_window_border {
+	    if !definition.has_os_window_border {
 	    	window_ex_style = WS_EX_WINDOWEDGE;
 			println!("This shouldn't be showing up. But it did. WS_EX_WINDOWEDGE is {0}, window_ex_style is {0}", window_ex_style);
 
-	    	if self.window_definitions.transparency_support == WindowTransparency::PerWindow {
+	    	if definition.transparency_support == WindowTransparency::PerWindow {
 	    		window_ex_style |= WS_EX_LAYERED;
 				println!("This shouldn't be showing up. But it did. WS_EX_LAYERED is {}, window_ex_style is {}", WS_EX_LAYERED, window_ex_style);
-	    	} else if self.window_definitions.transparency_support == WindowTransparency::PerPixel {
+	    	} else if definition.transparency_support == WindowTransparency::PerPixel {
 	    		if application_supports_per_pixel_blending {
 	    			window_ex_style |= WS_EX_COMPOSITED;
 					println!("This shouldn't be showing up. But it did. WS_EX_COMPOSITED is {}, window_ex_style is {}", WS_EX_COMPOSITED, window_ex_style);
 	    		}
 	    	}
 	    	window_style = WS_POPUP | WS_CLIPCHILDREN | WS_CLIPSIBLINGS;
-	    	if self.window_definitions.appears_in_taskbar {
+	    	if definition.appears_in_taskbar {
 	    		window_ex_style |= WS_EX_APPWINDOW;
 				println!("This shouldn't be showing up. But it did. WS_EX_APPWINDOW is {}, window_ex_style is {}", WS_EX_APPWINDOW, window_ex_style);
 	    	} else {
 	    		window_ex_style |= WS_EX_TOOLWINDOW;
 				println!("This shouldn't be showing up. But it did. WS_EX_TOOLWINDOW is {}, window_ex_style is {}", WS_EX_TOOLWINDOW, window_ex_style);
 	    	}
-	    	if self.window_definitions.is_topmost_window {
+	    	if definition.is_topmost_window {
 	    		// Tool tips are always top most windows
 			    window_ex_style |= WS_EX_TOPMOST;
 				println!("This shouldn't be showing up. But it did. WS_EX_TOPMOST is {}, window_ex_style is {}", WS_EX_TOPMOST, window_ex_style);
 	    	}
-	    	if !self.window_definitions.accepts_input {
+	    	if !definition.accepts_input {
 	    		// Window should never get input
 			    window_ex_style |= WS_EX_TRANSPARENT;
 				println!("This shouldn't be showing up. But it did. WS_EX_TRANSPARENT is {}, window_ex_style is {}", WS_EX_TRANSPARENT, window_ex_style);
@@ -135,18 +128,18 @@ impl WindowsWindow {
 			println!("This should be showing up. And it did. WS_EX_APPWINDOW is {}, window_ex_style is {}", WS_EX_APPWINDOW, window_ex_style);
 		    window_style = WS_OVERLAPPED | WS_SYSMENU | WS_CAPTION;
 			println!("window_style is {}. WS_OVERLAPPED is {}, WS_SYSMENU is {}, and WS_CAPTION is {}", window_style, WS_OVERLAPPED, WS_SYSMENU, WS_CAPTION);
-		    if self.is_regular_window() {
-		    	if self.window_definitions.supports_maximize {
+		    if definition.is_regular_window {
+		    	if definition.supports_maximize {
 				    window_style |= WS_MAXIMIZEBOX;
 					println!("window_style is {}. WS_MAXIMIZEBOX is {}", window_style, WS_MAXIMIZEBOX);
 			    }
 
-			    if self.window_definitions.supports_minimize {
+			    if definition.supports_minimize {
 				    window_style |= WS_MINIMIZEBOX;
 					println!("window_style is {}. WS_MINIMIZEBOX is {}", window_style, WS_MINIMIZEBOX);
 			    }
 
-			    if self.window_definitions.has_sizing_frame	{
+			    if definition.has_sizing_frame	{
 				    window_style |= WS_THICKFRAME;
 					println!("window_style is {}. WS_THICKFRAME is {}", window_style, WS_THICKFRAME);
 			    } else {
@@ -173,33 +166,54 @@ impl WindowsWindow {
 	    }
 
 	    //TODO: parent window may be null, but I'm using Rc to hold parent window, which I think implies that parent window can't be null. Fix.
-	    println!("self is {:p}", self);
-		println!("self.hwnd is {:p}", self.hwnd);
-	    println!("self.owning_application is {:p}", self.owning_application);
-	    println!("window_ex_style is {}", window_ex_style);
-	    let hwnd = unsafe {
-	        user32::CreateWindowExW(
-		        window_ex_style,
-		        self.app_window_class.to_wide_null().as_ptr(),
-		        (&self.window_definitions.title[..]).to_wide_null().as_ptr(),
-		        window_style, window_x, window_y, window_width, window_height,
-		        if parent.is_some() { parent.unwrap().hwnd } else { ptr::null_mut() },
-		        ptr::null_mut(), instance, ptr::null_mut())
-	    };
-	    println!("hwnd is {:p}", hwnd);
-	    self.hwnd = hwnd;
-
+	    //println!("self is {:p}", self);
+		//println!("self.hwnd is {:p}", self.hwnd);
+	    //println!("self.owning_application is {:p}", self.owning_application);
+	    //println!("window_ex_style is {}", window_ex_style);
+		let mut wnd_plcment: WINDOWPLACEMENT = unsafe { mem::zeroed() };
+		let mut wnd_plcment1: WINDOWPLACEMENT = unsafe { mem::zeroed() };
+		wnd_plcment.length = mem::size_of::<WINDOWPLACEMENT>() as u32;
+		wnd_plcment1.length = mem::size_of::<WINDOWPLACEMENT>() as u32;
+		let mut window = WindowsWindow {
+			app_window_class: APP_WINDOW_CLASS,
+			owning_application: unsafe { application_ptr() },
+		    hwnd: match create_window(
+		    	    window_ex_style, APP_WINDOW_CLASS.to_wide_null().as_ptr(),
+		            (&definition.title[..]).to_wide_null().as_ptr(),
+		            window_style, window_x, window_y, window_width, window_height,
+		            if parent.is_some() { parent.unwrap().hwnd } else { ptr::null_mut() },
+		            ptr::null_mut(), instance, ptr::null_mut()) {
+                Ok(hwnd) => hwnd,
+                Err(err) => {
+                  	wui_abort!(
+                        "\
+                            Window Creation Failed!: {}\r\n\
+                        ",
+                        err)
+                }
+		    },
+            region_height: -1,
+            region_width: -1,
+            window_mode: WindowMode::Windowed,
+            ole_reference_count: 0,
+            pre_fullscreen_window_placement: wnd_plcment,
+            pre_parent_minimized_window_placement: wnd_plcment1,
+            virtual_height: client_height,
+            virtual_width: client_width,
+            aspect_ratio: 1.0f32,
+            is_visible: false,
+            window_definitions: Rc::new(WindowDefinition::default()),
+        };
+	    
         println!("CreateWindowExW called");
-	    self.virtual_width = client_width;
-	    self.virtual_height = client_height;
 
 	    // We call reshape window here because we didn't take into account the non-client area
 	    // in the initial creation of the window. Slate should only pass client area dimensions.
 	    // Reshape window may resize the window if the non-client area is encroaching on our
 	    // desired client area space.
-	    self.reshape_window(&mut client_x, &mut client_y, &mut client_width, &mut client_height);
+	    window.reshape_window(&mut client_x, &mut client_y, &mut client_width, &mut client_height);
 
-	    if self.hwnd.is_null() {
+	    /*if window.hwnd.is_null() {
 	    	unsafe {
 	    		user32::MessageBoxW(ptr::null_mut(),
 	    		    format!("Window Creation Failed! {}", io::Error::last_os_error()).to_wide_null().as_ptr(),
@@ -208,52 +222,54 @@ impl WindowsWindow {
 	    	    );
 	    	}
 	    	return;
+	    }*/
+	    if definition.transparency_support == WindowTransparency::PerWindow {
+	    	let opacity = definition.opacity;
+	    	window.set_opacity(opacity);
 	    }
-	    if self.window_definitions.transparency_support == WindowTransparency::PerWindow {
-	    	let opacity = self.window_definitions.opacity;
-	    	self.set_opacity(opacity);
-	    }
-	    if !self.window_definitions.has_os_window_border {
+	    if !definition.has_os_window_border {
 	    	let rendering_policy = DWMNCRP_DISABLED;
 
 	    	unsafe {
-	    		if super::DwmSetWindowAttribute(self.hwnd, mem::transmute(DWMWA_NCRENDERING_POLICY), mem::transmute(&rendering_policy), mem::size_of::<DWORD>() as u32) != S_OK {
+	    		if super::DwmSetWindowAttribute(window.hwnd, mem::transmute(DWMWA_NCRENDERING_POLICY), mem::transmute(&rendering_policy), mem::size_of::<DWORD>() as u32) != S_OK {
 	    			println!("Warning: {}", io::Error::last_os_error());
 	    		}
 	    		let enable_nc_paint = FALSE;
-	    		if super::DwmSetWindowAttribute(self.hwnd, mem::transmute(DWMWA_ALLOW_NCPAINT), mem::transmute(&enable_nc_paint), mem::size_of::<BOOL>() as u32) != S_OK {
+	    		if super::DwmSetWindowAttribute(window.hwnd, mem::transmute(DWMWA_ALLOW_NCPAINT), mem::transmute(&enable_nc_paint), mem::size_of::<BOOL>() as u32) != S_OK {
                     println!("Warning: {}", io::Error::last_os_error());
 	    		}
-	    		if application_supports_per_pixel_blending && self.window_definitions.transparency_support == WindowTransparency::PerPixel {
+	    		if application_supports_per_pixel_blending && definition.transparency_support == WindowTransparency::PerPixel {
 	    			let mut margins = MARGINS {cxLeftWidth: -1, cxRightWidth: -1, cyTopHeight: -1, cyBottomHeight: -1};
-	    			if super::DwmExtendFrameIntoClientArea(self.hwnd, &margins) != 0 {
+	    			if super::DwmExtendFrameIntoClientArea(window.hwnd, &margins) != 0 {
                         println!("Warning: {}", io::Error::last_os_error());
 	    			}
 	    		}
 	    	}
 	    }
 
-	    if self.is_regular_window() && !self.window_definitions.has_os_window_border {
+	    if definition.is_regular_window && !definition.has_os_window_border {
 	    	window_style |= WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU;
 
-	    	if self.window_definitions.supports_maximize {
+	    	if definition.supports_maximize {
 			    window_style |= WS_MAXIMIZEBOX;
 		    }
-		    if self.window_definitions.supports_minimize {
+		    if definition.supports_minimize {
 		    	window_style |= WS_MINIMIZEBOX;
 		    }
-		    if self.window_definitions.has_sizing_frame {
+		    if definition.has_sizing_frame {
 			    window_style |= WS_THICKFRAME;
 		    }
 
 		    unsafe {
-		    	if user32::SetWindowLongW(self.hwnd, GWL_STYLE, window_style as i32) == 0 {
+		    	if user32::SetWindowLongW(window.hwnd, GWL_STYLE, window_style as i32) == 0 {
 		    		println!("Warning: {}", io::Error::last_os_error());
 		    	}
-		    	user32::SetWindowPos(self.hwnd, ptr::null_mut(), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
-		    	self.adjust_window_region(client_width, client_height);
+		    	user32::SetWindowPos(window.hwnd, ptr::null_mut(), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
+		    	window.adjust_window_region(client_width, client_height); //Adjusts region{width, height}
 		    }
 	    }
+		println!("about to return window, but first, window.hwnd is {:p}", window.hwnd);
+		window
 	}
 	pub fn get_hwnd(&self) -> HWND {
 		self.hwnd
@@ -693,4 +709,19 @@ impl GenericWindow for WindowsWindow {
 		    }
 		}
 	}
+}
+
+fn create_window(ex_style: DWORD, class_name: LPCWSTR, window_name: LPCWSTR,
+        style: DWORD, x: INT, y: INT, width: INT, height: INT,
+        wnd_parent: HWND, menu: HMENU, instance: HINSTANCE, param: LPVOID
+    ) -> io::Result<HWND> {
+	match unsafe {
+		user32::CreateWindowExW(
+            ex_style, class_name, window_name,
+            style, x, y, width, height,
+            wnd_parent, menu, instance, param
+    )} {
+        v if v.is_null() => Err(io::Error::last_os_error()),
+        v => Ok(v)
+    }
 }
