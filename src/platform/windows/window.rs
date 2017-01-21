@@ -167,7 +167,7 @@ impl WindowsWindow {
 		        (&self.window_definitions.title[..]).to_wide_null().as_ptr(),
 		        window_style, window_x, window_y, window_width, window_height,
 		        if parent.is_some() { parent.unwrap().hwnd } else { ptr::null_mut() },
-		        ptr::null_mut(), instance, self.owning_application as *const _ as *const c_void as *mut c_void)
+		        ptr::null_mut(), instance, ptr::null_mut())
 	    };
 
         println!("CreateWindowExW called");

@@ -1,6 +1,6 @@
 use kernel32;
 use std::ffi::{OsStr, OsString};
-use std::io;
+use std::{io, mem};
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
 use user32;
 use winapi::{HWND, LONG_PTR};
@@ -16,6 +16,16 @@ impl<T> ToWide for T where T: AsRef<OsStr> {
     }
     fn to_wide_null(&self) -> Vec<u16> {
         self.as_ref().encode_wide().chain(Some(0)).collect()
+    }
+}
+
+pub fn leak<T>(v: T) -> &'static T {
+    unsafe {
+        println!("Inside utils::leak");
+        let b = Box::new(v);
+        let p: *const T = &*b;
+        mem::forget(b); // leak our reference, so that `b` is never freed
+        &*p
     }
 }
 

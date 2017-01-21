@@ -3,7 +3,8 @@ extern crate user32;
 extern crate winapi;
 
 use seraph::generic::{WindowDefinition, WindowSizeLimits, WindowTransparency, WindowType};
-use seraph::platform::WindowsApplication;
+use seraph::windows::application::get_windows_application;
+use seraph::windows::window::WindowsWindow;
 use std::rc::Rc;
 use std::ptr;
 use winapi::{HICON, IDI_APPLICATION, LPCWSTR};
@@ -47,9 +48,11 @@ fn main() {
     	user32::LoadImageW(ptr::null_mut(), IDI_APPLICATION as LPCWSTR, 1, 0, 0, 0x00008000) as HICON
     };
     println!("Made icon");
-    let application = WindowsApplication::new(ptr::null_mut(), icon);
+    let application = get_windows_application(ptr::null_mut(), icon);
     println!("Made application");
-    let new_window = application.make_window();
-    println!("Made new_window");
-    application.initialize_window(new_window, &Rc::new(wd), None, true);
+    let new_window = WindowsWindow::make();
+    println!("Made new_window. new_window address is {:p}", new_window);
+    unsafe {
+        (&mut *application).initialize_window(new_window, &Rc::new(wd), None, true);
+    }
 }
