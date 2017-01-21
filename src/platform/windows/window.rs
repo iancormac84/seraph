@@ -41,7 +41,7 @@ pub struct WindowsWindow {
 }
 
 impl WindowsWindow {
-	/*pub fn new() -> WindowsWindow {
+	pub fn new() -> WindowsWindow {
 		unsafe {
 		    let mut wnd_plcment: WINDOWPLACEMENT = mem::zeroed();
 		    let mut wnd_plcment1: WINDOWPLACEMENT = mem::zeroed();
@@ -49,7 +49,7 @@ impl WindowsWindow {
 		    wnd_plcment1.length = mem::size_of::<WINDOWPLACEMENT>() as u32;
 		    WindowsWindow {
 			    app_window_class: APP_WINDOW_CLASS,
-			    owning_application: mem::uninitialized(),
+			    owning_application: unsafe { application_ptr() },
 		        hwnd: ptr::null_mut(),
                 region_height: mem::uninitialized(),
                 region_width: mem::uninitialized(),
@@ -68,7 +68,7 @@ impl WindowsWindow {
 	pub fn make() -> Rc<RefCell<WindowsWindow>> {
 		println!("WindowsWindow::make");
 		Rc::new(RefCell::new(WindowsWindow::new()))
-	}*/
+	}
 	pub fn initialize(definition: &Rc<WindowDefinition>, instance: HINSTANCE, parent: Option<Rc<WindowsWindow>>, show_immediately: bool) -> WindowsWindow {
 		println!("Just reach in initialize");
 		
@@ -170,10 +170,6 @@ impl WindowsWindow {
 		//println!("self.hwnd is {:p}", self.hwnd);
 	    //println!("self.owning_application is {:p}", self.owning_application);
 	    //println!("window_ex_style is {}", window_ex_style);
-		let mut wnd_plcment: WINDOWPLACEMENT = unsafe { mem::zeroed() };
-		let mut wnd_plcment1: WINDOWPLACEMENT = unsafe { mem::zeroed() };
-		wnd_plcment.length = mem::size_of::<WINDOWPLACEMENT>() as u32;
-		wnd_plcment1.length = mem::size_of::<WINDOWPLACEMENT>() as u32;
 		let mut window = WindowsWindow {
 			app_window_class: APP_WINDOW_CLASS,
 			owning_application: unsafe { application_ptr() },
