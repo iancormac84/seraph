@@ -3,13 +3,14 @@ use gdi32;
 use platform::generic::window::{GenericWindow, WindowMode};
 use platform::generic::window_definition::{WindowDefinition, WindowTransparency, WindowType};
 use platform::windows::application::WindowsApplication;
-use platform::windows::application::application_ptr;
+use platform::windows::application::WINDOWS_APPLICATION;
 use platform::windows::utils::ToWide;
 use std::cell::RefCell;
 use std::{cmp, io, mem, panic, ptr};
 use std::error::Error;
 use std::os::raw::c_void;
 use std::rc::Rc;
+use std::sync::{Arc, Weak};
 use super::{DWMNCRP_DISABLED, DWMWA_ALLOW_NCPAINT, DWMWA_NCRENDERING_POLICY, MARGINS, WINDOWINFO};
 use user32;
 use winapi::{
@@ -22,10 +23,10 @@ use winapi::{
 pub const APP_WINDOW_CLASS: &'static str = "CormacWindow";
 
 //TODO can I make this capable of clone? I want to try this so I don't have to do a clone in the WindowsApplication::find_window_by_hwnd method.
-#[derive(PartialEq, Debug)]
+#[derive(Debug)]
 pub struct WindowsWindow {
 	pub app_window_class: &'static str,
-	pub owning_application: *mut WindowsApplication,
+	pub owning_application: Weak<WindowsApplication>,
 	hwnd: HWND,
 	region_height: i32,
 	region_width: i32,
@@ -49,7 +50,7 @@ impl WindowsWindow {
 		    wnd_plcment1.length = mem::size_of::<WINDOWPLACEMENT>() as u32;
 		    WindowsWindow {
 			    app_window_class: APP_WINDOW_CLASS,
-			    owning_application: unsafe { application_ptr() },
+				owning_application: Arc::downgrade(WINDOWS_APPLICATION.unwrap()),
 		        hwnd: ptr::null_mut(),
                 region_height: -1,
                 region_width: -1,
@@ -71,11 +72,11 @@ impl WindowsWindow {
 	}
 	pub fn initialize(&mut self, definition: &Rc<WindowDefinition>, instance: HINSTANCE, parent: Option<Rc<WindowsWindow>>, show_immediately: bool) {
 		println!("Just reach in initialize");
-		let len = unsafe { (*self.owning_application).windows.len() };
+		/*let len = Weak::upgrade(&self.owning_application).unwrap().borrow().windows.len();
 		println!("self.owning_application.windows.len() is {}", len);
-		for w in unsafe { &(*self.owning_application).windows[..] } {
+		for w in &Weak::upgrade(&self.owning_application).unwrap().borrow().windows[..] {
 			println!("w is {:p}", w);
-		}
+		}*/
 		self.window_definitions = definition.clone();
 		
         let mut window_ex_style: u32 = 0;
@@ -95,7 +96,9 @@ impl WindowsWindow {
 	    let mut window_y = client_y;
 	    let mut window_width = client_width;
 	    let mut window_height = client_height;
-	    let application_supports_per_pixel_blending = unsafe { (*application_ptr()).get_window_transparency_support() } == WindowTransparency::PerPixel;
+		println!("about to borrow application");
+		let application_supports_per_pixel_blending = unsafe { WINDOWS_APPLICATION.unwrap().get_window_transparency_support() } == WindowTransparency::PerPixel;
+        println!("Borrow panic potential suspect innocent");
 
 	    if !self.window_definitions.has_os_window_border {
 	    	window_ex_style = WS_EX_WINDOWEDGE;
@@ -159,11 +162,11 @@ impl WindowsWindow {
 
 	    //TODO: parent window may be null, but I'm using Rc to hold parent window, which I think implies that parent window can't be null. Fix.
 	    println!("WindowsWindow self is {:p}", self);
-		let len = unsafe { (*self.owning_application).windows.len() };
-		println!("The vec len is {}", len);
+		//let len = Weak::upgrade(&self.owning_application).unwrap().borrow().windows.len();
+		//println!("The vec len is {}", len);
 		println!("self debug is {:#?}", self);
 		println!("self.hwnd is {:p}", self.hwnd);
-	    println!("self.owning_application is {:p}", self.owning_application);
+	    println!("self.owning_application is {:p}", &Weak::upgrade(&self.owning_application));
 		self.hwnd = match create_window(
 		    window_ex_style, APP_WINDOW_CLASS.to_wide_null().as_ptr(),
 		    (&self.window_definitions.title[..]).to_wide_null().as_ptr(),

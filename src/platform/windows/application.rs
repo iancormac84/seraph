@@ -17,7 +17,7 @@ use std::io::Error;
 use std::os::raw::c_void;
 use std::{mem, ptr};
 use std::rc::{Rc, Weak};
-use std::sync::{Mutex, Once, ONCE_INIT};
+use std::sync::{Arc, Once, ONCE_INIT};
 use std::sync::atomic::{AtomicUsize, ATOMIC_USIZE_INIT, Ordering};
 use super::{
   DLGC_WANTALLKEYS, FILTERKEYS, FKF_CONFIRMHOTKEY, FKF_FILTERKEYSON, FKF_HOTKEYACTIVE, IMN_CHANGECANDIDATE, IMN_CLOSECANDIDATE, IMN_CLOSESTATUSWINDOW, IMN_GUIDELINE, IMN_OPENCANDIDATE, IMN_OPENSTATUSWINDOW, IMN_PRIVATE, IMN_SETCANDIDATEPOS, IMN_SETCOMPOSITIONFONT, IMN_SETCOMPOSITIONWINDOW, IMN_SETCONVERSIONMODE, IMN_SETOPENSTATUS, IMN_SETSENTENCEMODE, IMN_SETSTATUSWINDOWPOS, IMR_CANDIDATEWINDOW, IMR_COMPOSITIONFONT, IMR_COMPOSITIONWINDOW, IMR_CONFIRMRECONVERTSTRING, IMR_DOCUMENTFEED, IMR_QUERYCHARPOSITION, IMR_RECONVERTSTRING,
@@ -52,12 +52,8 @@ use winreg::RegKey;
 
 type IntPoint2 = Point2<i32>;
 
-static mut WINDOWS_APPLICATION: *mut WindowsApplication = ptr::null_mut();
-static STATE: AtomicUsize = ATOMIC_USIZE_INIT;
-
-const UNINITIALIZED: usize = 0;
-const INITIALIZING: usize = 1;
-const INITIALIZED: usize = 2;
+pub static mut WINDOWS_APPLICATION: Option<&'static Arc<WindowsApplication>> = None;
+static INIT_APPLICATION: Once = ONCE_INIT;
 
 lazy_static! {
     static ref WINDOWS_MESSAGE_STRINGS: BTreeMap<u32, &'static str> = {
@@ -223,30 +219,21 @@ pub enum ModifierKey {
     Count = 7,
 }
 
-pub fn application_ptr() -> *mut WindowsApplication {
-    unsafe { unsafe { WINDOWS_APPLICATION } }
-}
-
-pub fn create_windows_application(hinstance: HINSTANCE, hicon: HICON) -> *mut WindowsApplication {
-    unsafe {
-        println!("WINDOWS_APPLICATION address is {:p}", WINDOWS_APPLICATION);
-        if WINDOWS_APPLICATION.is_null() {
-            println!("About to call create_windows_application because WINDOWS_APPLICATION is null");
-            init_windows_application(hinstance, hicon);
-        }
-        println!("WINDOWS_APPLICATION address is now {:p}", WINDOWS_APPLICATION);
-        WINDOWS_APPLICATION
-    }
+pub fn create_windows_application(hinstance: HINSTANCE, hicon: HICON) -> &'static Arc<WindowsApplication> {
+    INIT_APPLICATION.call_once(|| unsafe {
+        init_windows_application(hinstance, hicon)
+    });
+    unsafe { WINDOWS_APPLICATION.unwrap() }
 }
 
 unsafe fn init_windows_application(hinstance: HINSTANCE, hicon: HICON) {
-    let mut app = utils::leak(WindowsApplication::new(hinstance, hicon));
+    let mut app = utils::leak(Arc::new(WindowsApplication::new(hinstance, hicon)));
     println!("app address is {:p}", &app);
-    WINDOWS_APPLICATION = &mut app as *mut _ as *mut WindowsApplication;
+    WINDOWS_APPLICATION = Some(app);
 }
 
 //TODO implement GenericApplication trait. Also most likely trait based on IForceFeedbackSystem.
-#[derive(PartialEq, Debug)]
+#[derive(Debug)]
 pub struct WindowsApplication {
     cursor: Rc<WindowsCursor>,
 	minimized_window_position: IntPoint2,
@@ -254,7 +241,7 @@ pub struct WindowsApplication {
     using_high_precision_mouse_input: bool,
     is_mouse_attached: bool,
     force_activate_by_mouse: bool,
-    pub windows: Vec<Rc<RefCell<WindowsWindow>>>,
+    pub windows: RefCell<Vec<Rc<RefCell<WindowsWindow>>>>,
     //modifier_key_state: [bool; ModifierKey::Count as usize],
     in_modal_size_loop: bool,
     pub display_metrics: DisplayMetrics,
@@ -313,7 +300,7 @@ impl WindowsApplication {
             using_high_precision_mouse_input: false,
             is_mouse_attached: false,
             force_activate_by_mouse: false,
-            windows: vec![],
+            windows: RefCell::new(vec![]),
             //modifier_key_state: unsafe { mem::zeroed() },
             in_modal_size_loop: false,
             display_metrics: display_metrics,
@@ -331,10 +318,10 @@ impl WindowsApplication {
     pub fn make_window(&self) -> Rc<RefCell<WindowsWindow>> {
         WindowsWindow::make()
     }
-    pub fn initialize_window(&mut self, window: &Rc<RefCell<WindowsWindow>>, definition: &Rc<WindowDefinition>, parent: Option<Rc<WindowsWindow>>, show_immediately: bool) {
-        //println!("about to push on dat windows");
-        self.windows.push(window.clone());
-        //println!("self debug is {:#?}", self);
+    pub fn initialize_window(&self, window: &Rc<RefCell<WindowsWindow>>, definition: &Rc<WindowDefinition>, parent: Option<Rc<WindowsWindow>>, show_immediately: bool) {
+        println!("about to push on dat windows. Mutable borrow here.");
+        self.windows.borrow_mut().push(window.clone());
+        println!("about to initialize the window. Mutable borrow here.");
         window.borrow_mut().initialize(definition, self.instance_handle, parent, show_immediately);
     } 
     fn register_class(&self, hinstance: HINSTANCE, hicon: HICON) -> bool {
@@ -377,15 +364,19 @@ impl WindowsApplication {
 	    if is_composition_enabled != 0 { WindowTransparency::PerPixel } else { WindowTransparency::PerWindow }
     }
      //TODO the return signature for this method feels wrong.
-    pub fn find_window_by_hwnd(&self, windows_to_search: &Vec<Rc<RefCell<WindowsWindow>>>, handle_to_find: HWND) -> Option<Rc<RefCell<WindowsWindow>>> {
+    pub fn find_window_by_hwnd(&self, /*windows_to_search: &Vec<Rc<RefCell<WindowsWindow>>>,*/ handle_to_find: HWND) -> Option<Rc<RefCell<WindowsWindow>>> {
         println!("Inside find_window_by_hwnd, handle_to_find is {:p}", handle_to_find);
-        println!("windows_to_search.len() is {}", windows_to_search.len());
-        for window in windows_to_search {
-            println!("window is {:p} and {:#?}", window, window);
-            println!("window.borrow().get_hwnd() is {:p}", window.borrow().get_hwnd());
-            if window.borrow().get_hwnd() == handle_to_find {
-                return Some(window.clone());
+        let len = self.windows.borrow().len();
+        let mut n = 0;
+        loop {
+            if n == len { break; }
+            let borrowed_window = &self.windows.borrow()[n];
+            //println!("self.windows.borrow()[{}] is {:p} and {:#?}", n, borrowed_window, borrowed_window);
+            //println!("borrowed_window.get_hwnd() is {:p}", borrowed_window.borrow().get_hwnd());
+            if borrowed_window.borrow().get_hwnd() == handle_to_find {
+                return Some(borrowed_window.clone());
             }
+            n += 1;
         }
         None
     }
@@ -395,7 +386,7 @@ impl WindowsApplication {
             let got_point = user32::GetCursorPos(&mut cursor_pos);
             if got_point != 0 {
                 let hwnd: HWND = user32::WindowFromPoint(cursor_pos);
-                let window_under_cursor = self.find_window_by_hwnd(&self.windows, hwnd);
+                let window_under_cursor = self.find_window_by_hwnd(hwnd);
                 return window_under_cursor.is_some();
             }
         }
@@ -464,16 +455,15 @@ impl WindowsApplication {
             work_area
         }
     }
-    pub fn process_message(&mut self, hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> i32 {
+    pub fn process_message(&self, hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> i32 {
         println!("Reached inside process_message");
         unsafe {
-            println!("About to find window by hwnd");
             println!("hwnd is {:p}", hwnd);
             println!("WindowsApplication self address is {:p}", self);
-            println!("self.windows.len() is {}", self.windows.len());
-            let mut current_native_event_window_opt = self.find_window_by_hwnd(&self.windows, hwnd);
+            println!("self.windows.borrow().len() is {}. about to find window by hwnd.", self.windows.borrow().len());
+            let mut current_native_event_window_opt = self.find_window_by_hwnd(hwnd);
             
-            if self.windows.len() != 0 && current_native_event_window_opt.is_some() {
+            if self.windows.borrow().len() != 0 && current_native_event_window_opt.is_some() {
                 let mut current_native_event_window = current_native_event_window_opt.unwrap();
 
                 match msg {
@@ -615,7 +605,8 @@ impl WindowsApplication {
                         }
                     },
                     WM_DESTROY => {
-                        self.windows.retain(|ref x| **x != current_native_event_window);
+                        println!("about to delete references to windows after WM_DESTROY. Mutable borrow here.");
+                        self.windows.borrow_mut().retain(|ref x| Rc::ptr_eq(*x, &current_native_event_window) == false);
                         return 0;
                     },
                     _ => {}
@@ -728,7 +719,7 @@ impl WindowsApplication {
     }
     unsafe extern "system" fn app_wnd_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
         println!("in app_wnd_proc, message is {0}, {:#06x} ({})", msg, if let Some(msg_str) = super::WINDOWS_MESSAGE_STRINGS.get(&msg) { msg_str } else { "Not found" });
-        (&mut *WINDOWS_APPLICATION).process_message(hwnd, msg, wparam, lparam) as i64
+        WINDOWS_APPLICATION.unwrap().process_message(hwnd, msg, wparam, lparam) as i64
     }
 }
 
