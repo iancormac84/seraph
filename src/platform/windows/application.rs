@@ -257,7 +257,7 @@ pub struct WindowsApplication {
     pub windows: Vec<Rc<RefCell<WindowsWindow>>>,
     //modifier_key_state: [bool; ModifierKey::Count as usize],
     in_modal_size_loop: bool,
-    display_metrics: DisplayMetrics,
+    pub display_metrics: DisplayMetrics,
     //startup_sticky_keys: STICKYKEYS,
     //startup_toggle_keys: TOGGLEKEYS,
     //startup_filter_keys: FILTERKEYS,
@@ -325,18 +325,17 @@ impl WindowsApplication {
         let class_registered = winapp.register_class(hinstance, hicon);
         println!("Have we registered class? {}", class_registered);
         winapp.query_connected_mice();
+        println!("winapp debug is {:#?}", winapp);
         winapp
     }
     pub fn make_window(&self) -> Rc<RefCell<WindowsWindow>> {
         WindowsWindow::make()
     }
     pub fn initialize_window(&mut self, window: &Rc<RefCell<WindowsWindow>>, definition: &Rc<WindowDefinition>, parent: Option<Rc<WindowsWindow>>, show_immediately: bool) {
-        println!("Inside initialize_window");
-        let inst = self.instance_handle;
-        println!("about to call initialize on dat window");
+        //println!("about to push on dat windows");
         self.windows.push(window.clone());
-        println!("self.windows.len() is {}", self.windows.len());
-        window.borrow_mut().initialize(definition, inst, parent, show_immediately);
+        //println!("self debug is {:#?}", self);
+        window.borrow_mut().initialize(definition, self.instance_handle, parent, show_immediately);
     } 
     fn register_class(&self, hinstance: HINSTANCE, hicon: HICON) -> bool {
         unsafe {
@@ -470,10 +469,10 @@ impl WindowsApplication {
         unsafe {
             println!("About to find window by hwnd");
             println!("hwnd is {:p}", hwnd);
-            println!("self is {:p}", self);
+            println!("WindowsApplication self address is {:p}", self);
+            println!("self.windows.len() is {}", self.windows.len());
             let mut current_native_event_window_opt = self.find_window_by_hwnd(&self.windows, hwnd);
-            println!("Found window. {:?}", current_native_event_window_opt);
-
+            
             if self.windows.len() != 0 && current_native_event_window_opt.is_some() {
                 let mut current_native_event_window = current_native_event_window_opt.unwrap();
 
@@ -728,7 +727,7 @@ impl WindowsApplication {
         }
     }
     unsafe extern "system" fn app_wnd_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
-        println!("Reached inside app_wnd_proc");
+        println!("in app_wnd_proc, message is {0}, {:#06x} ({})", msg, if let Some(msg_str) = super::WINDOWS_MESSAGE_STRINGS.get(&msg) { msg_str } else { "Not found" });
         (&mut *WINDOWS_APPLICATION).process_message(hwnd, msg, wparam, lparam) as i64
     }
 }

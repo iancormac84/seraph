@@ -48,12 +48,14 @@ fn main() {
     	user32::LoadImageW(ptr::null_mut(), IDI_APPLICATION as LPCWSTR, 1, 0, 0, 0x00008000) as HICON
     };
     println!("Made icon");
-    let application = create_windows_application(unsafe { kernel32::GetModuleHandleW(ptr::null_mut()) }, icon);
+    let inst_handle = unsafe { kernel32::GetModuleHandleW(ptr::null_mut()) };
+    println!("inst_handle address is {:p}", inst_handle);
+    println!("icon address is {:p}", icon);
+    let application = create_windows_application(inst_handle, icon);
     println!("Made application. address is {:p}", application);
+    //println!("Also, application debug is {:#?}", unsafe {&*application});
     unsafe {
         let rc_window = (&*application).make_window();
-        println!("rc_window is {:p}", rc_window);
-        println!("&rc_window is {:p}", &rc_window);
         (&mut *application).initialize_window(&rc_window, &Rc::new(wd), None, true);
         (&mut *application).pump_messages(0.0);
     }
