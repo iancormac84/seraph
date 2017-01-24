@@ -318,11 +318,11 @@ impl WindowsApplication {
     pub fn make_window(&self) -> Rc<RefCell<WindowsWindow>> {
         WindowsWindow::make()
     }
-    pub fn initialize_window(&self, window: &Rc<RefCell<WindowsWindow>>, definition: &Rc<WindowDefinition>, parent: Option<Rc<WindowsWindow>>, show_immediately: bool) {
+    pub fn initialize_window(&self, window: &Rc<RefCell<WindowsWindow>>, definition: &Rc<RefCell<WindowDefinition>>, parent: Option<Rc<WindowsWindow>>, show_immediately: bool) {
         println!("about to push on dat windows. Mutable borrow here.");
         self.windows.borrow_mut().push(window.clone());
-        println!("about to initialize the window. Mutable borrow here.");
-        window.borrow_mut().initialize(definition, self.instance_handle, parent, show_immediately);
+        println!("about to initialize the window. Immutable borrow here.");
+        window.borrow().initialize(definition, self.instance_handle, parent, show_immediately);
     } 
     fn register_class(&self, hinstance: HINSTANCE, hicon: HICON) -> bool {
         unsafe {
@@ -464,6 +464,7 @@ impl WindowsApplication {
             let mut current_native_event_window_opt = self.find_window_by_hwnd(hwnd);
             
             if self.windows.borrow().len() != 0 && current_native_event_window_opt.is_some() {
+                println!("current_native_event_window_opt is some. Don't believe me? Look! {:#?}", current_native_event_window_opt);
                 let mut current_native_event_window = current_native_event_window_opt.unwrap();
 
                 match msg {
@@ -472,12 +473,13 @@ impl WindowsApplication {
                             let mmi = mem::transmute::<LPARAM, *const MINMAXINFO>(lparam);
                             *mmi
                         };
-                        let ref size_limits: WindowSizeLimits = current_native_event_window.borrow().get_definition().size_limits;
+                        let windef = current_native_event_window.borrow().get_definition();
+                        let ref size_limits: WindowSizeLimits = windef.borrow().size_limits;
 
                         // We need to inflate the max values if using an OS window border
                         let mut border_width: i32 = 0;
                         let mut border_height: i32 = 0;
-                        if current_native_event_window.borrow().get_definition().has_os_window_border {
+                        if windef.borrow().has_os_window_border {
                             let window_style = user32::GetWindowLongW(hwnd, GWL_STYLE);
                             let window_ex_style = user32::GetWindowLongW(hwnd, GWL_EXSTYLE);
 
@@ -497,14 +499,15 @@ impl WindowsApplication {
                         return 0;
                     },
                     WM_NCCALCSIZE => {
+                        let windef = current_native_event_window.borrow().get_definition();
                         // Let windows absorb this message if using the standard border
-                        if wparam != 0 && !current_native_event_window.borrow().get_definition().has_os_window_border {
+                        if wparam != 0 && !windef.borrow().has_os_window_border {
                             // Borderless game windows are not actually borderless, they have a thick border that we simply draw game content over (client
                             // rect contains the window border). When maximized Windows will bleed our border over the edges of the monitor. So that we
                             // don't draw content we are going to later discard, we change a maximized window's size and position so that the entire
                             // window rect (including the border) sits inside the monitor. The size adjustments here will be sent to WM_MOVE and
                             // WM_SIZE and the window will still be considered maximized.
-                            if current_native_event_window.borrow().get_definition().window_type == WindowType::GameWindow && current_native_event_window.borrow().is_maximized() {
+                            if windef.borrow().window_type == WindowType::GameWindow && current_native_event_window.borrow().is_maximized() {
                                 // Ask the system for the window border size as this is the amount that Windows will bleed our window over the edge
                                 // of our desired space. The value returned by current_native_event_window will be incorrect for our usage here as it
                                 // refers to the border of the window that Slate should consider.
@@ -547,7 +550,8 @@ impl WindowsApplication {
                         }
                     },
                     WM_SIZING => {
-                        if current_native_event_window.borrow().get_definition().should_preserve_aspect_ratio {
+                        let windef = current_native_event_window.borrow().get_definition();
+                        if windef.borrow().should_preserve_aspect_ratio {
                             // The rect we get in lparam is window rect, but we need to preserve client's aspect ratio,
                             // so we need to find what the border and title bar sizes are, if window has them and adjust the rect.
                             let mut window_info: WINDOWINFO = mem::zeroed();
@@ -715,6 +719,7 @@ impl WindowsApplication {
                 user32::TranslateMessage(&message);
                 user32::DispatchMessageW(&message); 
             }
+            println!("In pump_messages, return value was 0");
         }
     }
     unsafe extern "system" fn app_wnd_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
