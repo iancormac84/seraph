@@ -7,12 +7,12 @@ pub static mut DEBUG_SAFE_ZONE_RATIO: f32 = 1.0;
 pub static mut DEBUG_ACTION_ZONE_RATIO: f32 = 1.0;
 
 bitflags! {
-    flags ModifierKey: u8 {
-        const NONE = 0,
-        const CONTROL = 1 << 0,
-        const ALT = 1 << 1,
-        const SHIFT = 1 << 2,
-        const COMMAND = 1 << 3,
+    struct ModifierKey: u8 {
+        const NONE = 0;
+        const CONTROL = 1 << 0;
+        const ALT = 1 << 1;
+        const SHIFT = 1 << 2;
+        const COMMAND = 1 << 3;
     }
 }
 

@@ -1,5 +1,4 @@
 #![feature(const_fn)]
-#![feature(ptr_eq)]
 #![allow(dead_code, non_snake_case, non_camel_case_types)]
 #[macro_use] extern crate bitflags;
 #[macro_use] extern crate conv;
@@ -45,7 +44,7 @@ pub fn is_in_game_thread() -> bool {
 //The code to initialize GAME_THREAD_ID is in E:\Devel\study\UnrealEngine\Engine\Source\Runtime\Launch\Private\LaunchEngineLoop.cpp.
 //This is done by a call to FPlatformTLS::GetCurrentThreadId(). Read this file; it is interesting.
 //Also please note that in E:\Devel\study\UnrealEngine\Engine\Source\Runtime\Slate\Private\Framework\Application\SlateApplication.cpp (line 1589?), it is asserted
-//that IsInGameThread encompasses to threads in actuality. These are the main thread and the slate loading thread. The code does a check as to whether the GAME_THREAD_ID
+//that IsInGameThread encompasses two threads in actuality. These are the main thread and the slate loading thread. The code does a check as to whether the GAME_THREAD_ID
 //is the same as the thread id returned by a call to FPlatformTLS::GetCurrentThreadId(). 
 
 //use uuid::{IID_IDropTarget, IID_IUnknown};

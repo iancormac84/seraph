@@ -321,6 +321,10 @@ impl WindowsApplication {
     pub fn initialize_window(&self, window: &Rc<RefCell<WindowsWindow>>, definition: &Rc<RefCell<WindowDefinition>>, parent: Option<Rc<WindowsWindow>>, show_immediately: bool) {
         println!("about to push on dat windows. Mutable borrow here.");
         self.windows.borrow_mut().push(window.clone());
+        println!("window strong count is {}", Rc::strong_count(&window));
+		println!("window weak count is {}", Rc::weak_count(&window));
+        println!("definition strong count is {}", Rc::strong_count(&definition));
+		println!("definition weak count is {}", Rc::weak_count(&definition));
         println!("about to initialize the window. Immutable borrow here.");
         window.borrow().initialize(definition, self.instance_handle, parent, show_immediately);
     } 

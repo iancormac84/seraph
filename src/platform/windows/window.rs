@@ -75,6 +75,8 @@ impl WindowsWindow {
 		println!("Just reach in initialize");
 		
 		self.window_definitions.borrow_mut().clone_from(definition);
+		println!("definition strong count is {}", Rc::strong_count(&definition));
+		println!("definition weak count is {}", Rc::weak_count(&definition));
 		
         let mut window_ex_style: u32 = 0;
         let mut window_style: u32 = 0;
@@ -95,9 +97,8 @@ impl WindowsWindow {
 	    let mut window_y = client_y;
 	    let mut window_width = client_width;
 	    let mut window_height = client_height;
-		println!("about to borrow application");
+		
 		let application_supports_per_pixel_blending = unsafe { WINDOWS_APPLICATION.unwrap().get_window_transparency_support() } == WindowTransparency::PerPixel;
-        println!("Borrow panic potential suspect innocent");
 
 	    if !windef_borrow.borrow().has_os_window_border {
 	    	window_ex_style = WS_EX_WINDOWEDGE;
