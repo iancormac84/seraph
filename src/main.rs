@@ -3,8 +3,10 @@ extern crate seraph;
 extern crate user32;
 extern crate winapi;
 
+use seraph::generic::window::GenericWindow;
 use seraph::generic::{WindowDefinition, WindowSizeLimits, WindowTransparency, WindowType};
 use seraph::windows::application::create_windows_application;
+use std::cell::RefCell;
 use std::rc::Rc;
 use std::ptr;
 use winapi::{HICON, IDI_APPLICATION, LPCWSTR};
@@ -55,6 +57,7 @@ fn main() {
     println!("Made application. address is {:p}", application);
     //println!("Also, application debug is {:#?}", unsafe {&*application});
     let rc_window = application.make_window();
-    application.initialize_window(&rc_window, &Rc::new(wd), None, true);
+    application.initialize_window(&rc_window, &Rc::new(RefCell::new(wd)), None, true);
+    rc_window.borrow().show();
     application.pump_messages(0.0);
 }
