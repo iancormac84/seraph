@@ -1,5 +1,4 @@
 #![feature(const_fn)]
-#![feature(ptr_eq)]
 #![allow(dead_code, non_snake_case, non_camel_case_types)]
 #[macro_use] extern crate bitflags;
 #[macro_use] extern crate conv;
