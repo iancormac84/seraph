@@ -18,11 +18,11 @@ bitflags! {
 
 impl ModifierKey {
 	pub fn from_bools(control: bool, alt: bool, shift: bool, command: bool) -> ModifierKey {
-		let mut modifier_mask: ModifierKey = NONE;
-		if control { modifier_mask |= CONTROL };
-		if alt     { modifier_mask |= ALT };
-		if shift   { modifier_mask |= SHIFT };
-		if command { modifier_mask |= COMMAND };
+		let mut modifier_mask = ModifierKey::NONE;
+		if control { modifier_mask |= ModifierKey::CONTROL };
+		if alt     { modifier_mask |= ModifierKey::ALT };
+		if shift   { modifier_mask |= ModifierKey::SHIFT };
+		if command { modifier_mask |= ModifierKey::COMMAND };
 
 		modifier_mask
 	}

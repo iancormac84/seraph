@@ -8,7 +8,7 @@ path = "E:/Devel/resources/cgmath"
 
 [dependencies]
 advapi32-sys = "0.2.0"
-bitflags = "0.9.1"
+bitflags = "1.0.0"
 conv = "*"
 custom_derive = "*"
 dwmapi-sys = "0.1.0"
@@ -23,7 +23,7 @@ winreg = "0.4.0"
 
 [replace]
 "advapi32-sys:0.2.0" = { path = "E:/Devel/resources/winapi-rs/lib/advapi32" }
-"bitflags:0.9.1" = { path = "E:/Devel/resources/bitflags" }
+"bitflags:1.0.0" = { path = "E:/Devel/resources/bitflags" }
 "dwmapi-sys:0.1.0" = { path = "E:/Devel/resources/winapi-rs/lib/dwmapi" }
 "gdi32-sys:0.2.0" = { path = "E:/Devel/resources/winapi-rs/lib/gdi32" }
 "kernel32-sys:0.2.2" = { path = "E:/Devel/resources/winapi-rs/lib/kernel32" }
