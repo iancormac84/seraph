@@ -502,6 +502,34 @@ impl WindowsApplication {
                         min_max_info.ptMaxTrackSize.y = size_limits.get_max_height().unwrap_or(min_max_info.ptMaxTrackSize.y as f32) as i32 + border_height;
                         return 0;
                     },
+                    WM_INPUT => {
+                        let mut size: u32 = 0;
+                        user32::GetRawInputData(lparam as HRAWINPUT, RID_INPUT, ptr::null_mut(), &mut size, mem::size_of::<RAWINPUTHEADER>() as u32);
+                        
+                        let raw = {
+                            let mut raw = mem::uninitialized::<RAWINPUT>();
+                            assert!(user32::GetRawInputData(lparam as HRAWINPUT, RID_INPUT, ((&mut raw) as *mut RAWINPUT) as LPVOID, &mut size, mem::size_of::<RAWINPUTHEADER>() as u32) == size);
+                            raw
+                        };
+                        let raw_mouse = raw.mouse();
+
+                        if raw.header.dwType == RIM_TYPEMOUSE {
+                            let is_absolute_input = (raw_mouse.usFlags & MOUSE_MOVE_ABSOLUTE) == MOUSE_MOVE_ABSOLUTE;
+                            if is_absolute_input {
+                                // Since the raw input is coming in as absolute it is likely the user is using a tablet
+                                // or perhaps is interacting through a virtual desktop
+                                self.defer_message(&current_native_event_window, hwnd, msg, wparam, lparam, 0, 0, MOUSE_MOVE_ABSOLUTE as u32);
+                                return 1;
+                            }
+
+                            // Since raw input is coming in as relative it is likely a traditional mouse device
+                            let x_pos_relative = raw_mouse.lLastX;
+                            let y_pos_relative = raw_mouse.lLastY;
+
+                            self.defer_message(&current_native_event_window, hwnd, msg, wparam, lparam, x_pos_relative, y_pos_relative, MOUSE_MOVE_RELATIVE as u32);
+                            return 1;
+                        }
+                    },
                     WM_NCCALCSIZE => {
                         let windef = current_native_event_window.borrow().get_definition();
                         // Let windows absorb this message if using the standard border
