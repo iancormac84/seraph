@@ -720,7 +720,7 @@ impl WindowsApplication {
 
                                 // A pointer to the window size data that Windows will use is passed to us in lparam
                                 let resizing_rects: &mut NCCALCSIZE_PARAMS =
-                                    lparam as usize as &mut _;
+                                    lparam as usize as *mut _ as &mut _;
 
                                 // The first rectangle contains the client rectangle of the resized window.
                                 // Decrease window size on all sides by the border size.
