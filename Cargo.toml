@@ -27,8 +27,6 @@ features = [
 [dependencies]
 bitflags = "*"
 cgmath = "*"
-conv = "*"
-macro-attr-2018 = "*"
 once_cell = "*"
 parking_lot = "*"
 winreg = "*"

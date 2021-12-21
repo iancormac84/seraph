@@ -1,22 +1,41 @@
-use crate::windows::utils::other_error;
 use crate::windows::utils::ToWide;
-use conv::TryFrom;
-use macro_attr_2018::macro_attr;
 use std::{io, ptr};
-use windows::Win32::{Foundation::HWND, UI::WindowsAndMessaging::MessageBoxW};
+use windows::Win32::{
+    Foundation::{HWND, PWSTR},
+    UI::WindowsAndMessaging::MessageBoxW,
+};
 
-macro_attr! {
-    #[derive(Debug, TryFrom!(::std::os::raw::c_int))]
-    pub enum MessageBoxResult {
-        Abort = 3,
-        Cancel = 2,
-        Continue = 11,
-        Ignore = 5,
-        No = 7,
-        Ok = 1,
-        Retry = 4,
-        TryAgain = 10,
-        Yes = 6,
+#[derive(Debug)]
+pub enum MessageBoxResult {
+    Ok = 1,
+    Cancel = 2,
+    Abort = 3,
+    Retry = 4,
+    Ignore = 5,
+    Yes = 6,
+    No = 7,
+    TryAgain = 10,
+    Continue = 11,
+}
+
+impl TryFrom<i32> for MessageBoxResult {
+    type Error = io::Error;
+    fn try_from(value: i32) -> Result<Self, Self::Error> {
+        match value {
+            3 => Ok(MessageBoxResult::Abort),
+            2 => Ok(MessageBoxResult::Cancel),
+            11 => Ok(MessageBoxResult::Continue),
+            5 => Ok(MessageBoxResult::Ignore),
+            7 => Ok(MessageBoxResult::No),
+            1 => Ok(MessageBoxResult::Ok),
+            4 => Ok(MessageBoxResult::Retry),
+            10 => Ok(MessageBoxResult::TryAgain),
+            6 => Ok(MessageBoxResult::Yes),
+            _ => {
+                let msg = format!("unexpected message box result {}", value);
+                Err(io::Error::new(io::ErrorKind::Other, &msg[..]))
+            },
+        }
     }
 }
 
@@ -27,18 +46,18 @@ pub fn message_box(
     type_: Option<u32>,
 ) -> io::Result<MessageBoxResult> {
     unsafe {
-        let wnd = wnd.unwrap_or(ptr::null_mut());
+        let wnd = wnd.unwrap_or(0);
         let text = text.to_wide_null();
-        let text = text.as_ptr();
+        let text = text.as_mut_ptr();
         let caption = caption.map(|v| v.to_wide_null());
         let caption = caption
             .as_ref()
-            .map(|v| v.as_ptr())
+            .map(|v| v.as_mut_ptr())
             .unwrap_or(ptr::null_mut());
         let type_ = type_.unwrap_or(0);
-        match MessageBoxW(wnd, text, caption, type_) {
+        match MessageBoxW(wnd, PWSTR(text), PWSTR(caption), type_) {
             0 => Err(io::Error::last_os_error()),
-            v => MessageBoxResult::try_from(v).or_else(|_| other_error("unexpected result")),
+            v => Ok(MessageBoxResult::try_from(v)?),
         }
     }
 }

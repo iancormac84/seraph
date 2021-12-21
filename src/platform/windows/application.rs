@@ -16,6 +16,7 @@ use crate::windows::window::{WindowsWindow, APP_WINDOW_CLASS};
 use crate::windows::xinputinterface::XInputInterface;
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
+use std::borrow::Borrow;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::io::Error;
@@ -395,7 +396,7 @@ impl WindowsApplication {
     pub fn initialize_window(
         &self,
         window: &Rc<RefCell<WindowsWindow>>,
-        definition: &Rc<RefCell<WindowDefinition>>,
+        definition: &Rc<WindowDefinition>,
         parent: Option<Rc<WindowsWindow>>,
         show_immediately: bool,
     ) {
@@ -422,7 +423,7 @@ impl WindowsApplication {
                 cbWndExtra: 0,
                 hInstance: hinstance,
                 hIcon: hicon,
-                hCursor: 0, // We manage the cursor ourselves
+                hCursor: 0,       // We manage the cursor ourselves
                 hbrBackground: 0, // Transparent
                 lpszMenuName: PWSTR("".to_wide_null().as_mut_ptr()),
                 lpszClassName: PWSTR(APP_WINDOW_CLASS.to_wide_null().as_mut_ptr()),
@@ -447,12 +448,20 @@ impl WindowsApplication {
         }
     }
     pub fn get_window_transparency_support(&self) -> WindowTransparency {
-        let is_composition_enabled = unsafe { DwmIsCompositionEnabled() };
+        let res = unsafe { DwmIsCompositionEnabled() };
 
-        if is_composition_enabled != 0 {
-            WindowTransparency::PerPixel
-        } else {
-            WindowTransparency::PerWindow
+        match res {
+            Err(error) => {
+                println!("WARNING: {}", error);
+                WindowTransparency::PerWindow
+            }
+            Ok(composition_enabled) => {
+                if composition_enabled.0 != 0 {
+                    WindowTransparency::PerPixel
+                } else {
+                    WindowTransparency::PerWindow
+                }
+            }
         }
     }
     //TODO the return signature for this method feels wrong.
@@ -584,13 +593,13 @@ impl WindowsApplication {
                             let mmi = mem::transmute::<LPARAM, *const MINMAXINFO>(lparam);
                             *mmi
                         };
-                        let windef = current_native_event_window.borrow().get_definition();
-                        let ref size_limits: WindowSizeLimits = windef.borrow().size_limits;
+                        let windef: &WindowDefinition = Rc::borrow(&current_native_event_window.get_definition());
+                        let ref size_limits: WindowSizeLimits = windef.size_limits;
 
                         // We need to inflate the max values if using an OS window border
                         let mut border_width: i32 = 0;
                         let mut border_height: i32 = 0;
-                        if windef.borrow().has_os_window_border {
+                        if windef.has_os_window_border {
                             let window_style = GetWindowLongW(hwnd, GWL_STYLE);
                             let window_ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
 
@@ -654,8 +663,9 @@ impl WindowsApplication {
                         let raw_mouse = raw.data.mouse;
 
                         if raw.header.dwType == RIM_TYPEMOUSE {
-                            let is_absolute_input =
-                                (raw_mouse.usFlags as u32 & MOUSE_MOVE_ABSOLUTE) == MOUSE_MOVE_ABSOLUTE;
+                            let is_absolute_input = (raw_mouse.usFlags as u32
+                                & MOUSE_MOVE_ABSOLUTE)
+                                == MOUSE_MOVE_ABSOLUTE;
                             if is_absolute_input {
                                 // Since the raw input is coming in as absolute it is likely the user is using a tablet
                                 // or perhaps is interacting through a virtual desktop
@@ -782,7 +792,8 @@ impl WindowsApplication {
                                 rect.top -= (adjusted_height - new_height) / 2;
                                 rect.bottom += (adjusted_height - new_height) / 2;
                                 //break;
-                            } else if wparam == WMSZ_TOP as usize || wparam == WMSZ_BOTTOM as usize {
+                            } else if wparam == WMSZ_TOP as usize || wparam == WMSZ_BOTTOM as usize
+                            {
                                 let adjusted_width: i32 = new_height * aspect_ratio as i32;
                                 rect.left -= (adjusted_width - new_width) / 2;
                                 rect.right += (adjusted_width - new_width) / 2;
@@ -1052,8 +1063,7 @@ fn get_size_for_dev_id(target_dev_id: &String, width: &mut i32, height: &mut i32
                             KEY_READ,
                         );
 
-                        if h_dev_reg_key != 0 && h_dev_reg_key != INVALID_HANDLE_VALUE.0
-                        {
+                        if h_dev_reg_key != 0 && h_dev_reg_key != INVALID_HANDLE_VALUE.0 {
                             res = get_monitor_size_from_edid(
                                 RegKey::predef(h_dev_reg_key),
                                 width,
@@ -1085,7 +1095,14 @@ fn get_monitor_info(out_monitor_info: &mut Vec<MonitorInfo>) {
         let mut primary_device: *mut MonitorInfo = ptr::null_mut();
         out_monitor_info.reserve(2); // Reserve two slots, as that will be the most common maximum
 
-        while EnumDisplayDevicesW(PWSTR("".to_wide_null().as_mut_ptr()), device_index, &mut display_device, 0).0 != 0 {
+        while EnumDisplayDevicesW(
+            PWSTR("".to_wide_null().as_mut_ptr()),
+            device_index,
+            &mut display_device,
+            0,
+        )
+        .0 != 0
+        {
             if display_device.StateFlags & DISPLAY_DEVICE_ATTACHED_TO_DESKTOP > 0 {
                 let mut monitor = DISPLAY_DEVICEW::default();
                 monitor.cb = mem::size_of::<DISPLAY_DEVICEW>() as u32;
@@ -1096,7 +1113,8 @@ fn get_monitor_info(out_monitor_info: &mut Vec<MonitorInfo>) {
                     monitor_index,
                     &mut monitor,
                     0,
-                ).0 != 0
+                )
+                .0 != 0
                 {
                     if (monitor.StateFlags & DISPLAY_DEVICE_ACTIVE != 0)
                         && (monitor.StateFlags & DISPLAY_DEVICE_MIRRORING_DRIVER == 0)

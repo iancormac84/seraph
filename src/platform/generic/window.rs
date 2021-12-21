@@ -1,5 +1,4 @@
 use crate::generic::window_definition::WindowDefinition;
-use std::cell::RefCell;
 use std::os::raw::c_void;
 use std::rc::Rc;
 
@@ -59,6 +58,6 @@ pub trait GenericWindow {
     fn is_foreground_window(&self) -> bool;
     fn is_fullscreen_supported(&self) -> bool;
     fn set_text(&self, text: Vec<u16>);
-    fn get_definition(&self) -> Rc<RefCell<WindowDefinition>>;
+    fn get_definition(&self) -> Rc<WindowDefinition>;
     fn adjust_cached_size(&self, size: &mut (i32, i32));
 }

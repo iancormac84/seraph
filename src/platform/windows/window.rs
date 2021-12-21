@@ -4,6 +4,7 @@ use crate::windows::application::WindowsApplication;
 use crate::windows::application::WINDOWS_APPLICATION;
 use crate::windows::utils::ToWide;
 use std::{
+    borrow::{Borrow, BorrowMut},
     cell::{Cell, RefCell},
     cmp, io, mem,
     os::raw::c_void,
@@ -12,7 +13,7 @@ use std::{
     sync::{Arc, Weak},
 };
 use windows::Win32::{
-    Foundation::{BOOL, HINSTANCE, HWND, PWSTR, RECT, S_OK},
+    Foundation::{BOOL, HINSTANCE, HWND, PWSTR, RECT},
     Graphics::{
         Dwm::{
             DwmExtendFrameIntoClientArea, DwmSetWindowAttribute, DWMNCRP_DISABLED,
@@ -81,7 +82,7 @@ impl WindowsWindow {
             WindowsWindow {
                 app_window_class: APP_WINDOW_CLASS,
                 owning_application: Arc::downgrade(WINDOWS_APPLICATION.unwrap()),
-                hwnd: Cell::new(ptr::null_mut()),
+                hwnd: Cell::new(0),
                 region_height: Cell::new(-1),
                 region_width: Cell::new(-1),
                 window_mode: WindowMode::Windowed,
@@ -102,7 +103,7 @@ impl WindowsWindow {
     }
     pub fn initialize(
         &self,
-        definition: &Rc<RefCell<WindowDefinition>>,
+        definition: &Rc<WindowDefinition>,
         instance: HINSTANCE,
         parent: Option<Rc<WindowsWindow>>,
         show_immediately: bool,
@@ -119,13 +120,13 @@ impl WindowsWindow {
         let mut window_ex_style: u32 = 0;
         let mut window_style: u32 = 0;
 
-        let windef_borrow = self.window_definitions.borrow();
+        let windef_borrow: &WindowDefinition = Rc::borrow(&self.window_definitions);
 
-        let x_initial_rect = windef_borrow.borrow().x_desired_position_on_screen;
-        let y_initial_rect = windef_borrow.borrow().y_desired_position_on_screen;
+        let x_initial_rect = windef_borrow.x_desired_position_on_screen;
+        let y_initial_rect = windef_borrow.y_desired_position_on_screen;
 
-        let width_initial = windef_borrow.borrow().width_desired_on_screen;
-        let height_initial = windef_borrow.borrow().height_desired_on_screen;
+        let width_initial = windef_borrow.width_desired_on_screen;
+        let height_initial = windef_borrow.height_desired_on_screen;
 
         let mut client_x = x_initial_rect as i32;
         let mut client_y = y_initial_rect as i32;
@@ -142,27 +143,27 @@ impl WindowsWindow {
                 .get_window_transparency_support()
         } == WindowTransparency::PerPixel;
 
-        if !windef_borrow.borrow().has_os_window_border {
+        if !windef_borrow.has_os_window_border {
             window_ex_style = WS_EX_WINDOWEDGE;
 
-            if windef_borrow.borrow().transparency_support == WindowTransparency::PerWindow {
+            if windef_borrow.transparency_support == WindowTransparency::PerWindow {
                 window_ex_style |= WS_EX_LAYERED;
-            } else if windef_borrow.borrow().transparency_support == WindowTransparency::PerPixel {
+            } else if windef_borrow.transparency_support == WindowTransparency::PerPixel {
                 if application_supports_per_pixel_blending {
                     window_ex_style |= WS_EX_COMPOSITED;
                 }
             }
             window_style = WS_POPUP | WS_CLIPCHILDREN | WS_CLIPSIBLINGS;
-            if windef_borrow.borrow().appears_in_taskbar {
+            if windef_borrow.appears_in_taskbar {
                 window_ex_style |= WS_EX_APPWINDOW;
             } else {
                 window_ex_style |= WS_EX_TOOLWINDOW;
             }
-            if windef_borrow.borrow().is_topmost_window {
+            if windef_borrow.is_topmost_window {
                 // Tool tips are always top most windows
                 window_ex_style |= WS_EX_TOPMOST;
             }
-            if !windef_borrow.borrow().accepts_input {
+            if !windef_borrow.accepts_input {
                 // Window should never get input
                 window_ex_style |= WS_EX_TRANSPARENT;
             }
@@ -170,16 +171,16 @@ impl WindowsWindow {
             // OS Window border setup
             window_ex_style = WS_EX_APPWINDOW;
             window_style = WS_OVERLAPPED | WS_SYSMENU | WS_CAPTION;
-            if windef_borrow.borrow().is_regular_window {
-                if windef_borrow.borrow().supports_maximize {
+            if windef_borrow.is_regular_window {
+                if windef_borrow.supports_maximize {
                     window_style |= WS_MAXIMIZEBOX;
                 }
 
-                if windef_borrow.borrow().supports_minimize {
+                if windef_borrow.supports_minimize {
                     window_style |= WS_MINIMIZEBOX;
                 }
 
-                if windef_borrow.borrow().has_sizing_frame {
+                if windef_borrow.has_sizing_frame {
                     window_style |= WS_THICKFRAME;
                 } else {
                     window_style |= WS_BORDER;
@@ -209,7 +210,7 @@ impl WindowsWindow {
         //let len = Weak::upgrade(&self.owning_application).unwrap().borrow().windows.len();
         //println!("The vec len is {}", len);
         println!("self debug is {:#?}", self);
-        println!("self.hwnd is {:p}", self.hwnd.get());
+        println!("self.hwnd is {:?}", self.hwnd.get());
         println!(
             "self.owning_application is {:p}",
             &Weak::upgrade(&self.owning_application)
@@ -217,8 +218,12 @@ impl WindowsWindow {
         self.hwnd.set(
             match create_window(
                 window_ex_style,
-                APP_WINDOW_CLASS.to_wide_null().as_ptr(),
-                (&windef_borrow.borrow().title[..]).to_wide_null().as_ptr(),
+                PWSTR(APP_WINDOW_CLASS.to_wide_null().as_mut_ptr()),
+                PWSTR(
+                    (&windef_borrow.title[..])
+                        .to_wide_null()
+                        .as_mut_ptr(),
+                ),
                 window_style,
                 window_x,
                 window_y,
@@ -227,9 +232,9 @@ impl WindowsWindow {
                 if parent.is_some() {
                     parent.unwrap().hwnd.get()
                 } else {
-                    ptr::null_mut()
+                    0
                 },
-                ptr::null_mut(),
+                0,
                 instance,
                 ptr::null_mut(),
             ) {
@@ -244,7 +249,7 @@ impl WindowsWindow {
                 }
             },
         );
-        println!("self.hwnd is now {:p}", self.hwnd.get());
+        println!("self.hwnd is now {:?}", self.hwnd.get());
 
         println!("CreateWindowExW called");
         self.virtual_width.set(client_width);
@@ -271,35 +276,35 @@ impl WindowsWindow {
             }
             return;
         }*/
-        if windef_borrow.borrow().transparency_support == WindowTransparency::PerWindow {
-            let opacity = windef_borrow.borrow().opacity;
+        if windef_borrow.transparency_support == WindowTransparency::PerWindow {
+            let opacity = windef_borrow.opacity;
             self.set_opacity(opacity);
         }
-        if !windef_borrow.borrow().has_os_window_border {
+        if !windef_borrow.has_os_window_border {
             let rendering_policy = DWMNCRP_DISABLED;
 
             unsafe {
-                if DwmSetWindowAttribute(
+                let res = DwmSetWindowAttribute(
                     self.hwnd.get(),
                     mem::transmute(DWMWA_NCRENDERING_POLICY),
                     mem::transmute(&rendering_policy),
                     mem::size_of::<u32>() as u32,
-                ) != S_OK
-                {
-                    println!("Warning: {}", io::Error::last_os_error());
+                );
+                if let Err(error) = res {
+                    println!("Warning: {}", error);
                 }
                 let enable_nc_paint = false;
-                if DwmSetWindowAttribute(
+                let res = DwmSetWindowAttribute(
                     self.hwnd.get(),
                     mem::transmute(DWMWA_ALLOW_NCPAINT),
                     mem::transmute(&enable_nc_paint),
                     mem::size_of::<BOOL>() as u32,
-                ) != S_OK
-                {
-                    println!("Warning: {}", io::Error::last_os_error());
+                );
+                if let Err(error) = res {
+                    println!("Warning: {}", error);
                 }
                 if application_supports_per_pixel_blending
-                    && windef_borrow.borrow().transparency_support == WindowTransparency::PerPixel
+                    && windef_borrow.transparency_support == WindowTransparency::PerPixel
                 {
                     let mut margins = MARGINS {
                         cxLeftWidth: -1,
@@ -307,24 +312,25 @@ impl WindowsWindow {
                         cyTopHeight: -1,
                         cyBottomHeight: -1,
                     };
-                    if DwmExtendFrameIntoClientArea(self.hwnd.get(), &margins) != 0 {
-                        println!("Warning: {}", io::Error::last_os_error());
+                    let res = DwmExtendFrameIntoClientArea(self.hwnd.get(), &margins);
+                    if let Err(error) = res {
+                        println!("Warning: {}", error);
                     }
                 }
             }
         }
 
-        if windef_borrow.borrow().is_regular_window && !windef_borrow.borrow().has_os_window_border
+        if windef_borrow.is_regular_window && !windef_borrow.has_os_window_border
         {
             window_style |= WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU;
 
-            if windef_borrow.borrow().supports_maximize {
+            if windef_borrow.supports_maximize {
                 window_style |= WS_MAXIMIZEBOX;
             }
-            if windef_borrow.borrow().supports_minimize {
+            if windef_borrow.supports_minimize {
                 window_style |= WS_MINIMIZEBOX;
             }
-            if windef_borrow.borrow().has_sizing_frame {
+            if windef_borrow.has_sizing_frame {
                 window_style |= WS_THICKFRAME;
             }
 
@@ -334,7 +340,7 @@ impl WindowsWindow {
                 }
                 SetWindowPos(
                     self.hwnd.get(),
-                    ptr::null_mut(),
+                    0,
                     0,
                     0,
                     0,
@@ -350,11 +356,11 @@ impl WindowsWindow {
     }
     pub fn make_window_region_object(&self) -> HRGN {
         let mut region: HRGN;
-        let windef_borrow = self.window_definitions.borrow();
+        let windef_borrow: &WindowDefinition = Rc::borrow(&self.window_definitions);
         if self.region_width.get() != -1 && self.region_height.get() != -1 {
             if self.is_maximized() {
-                if windef_borrow.borrow().window_type == WindowType::GameWindow
-                    && !windef_borrow.borrow().has_os_window_border
+                if windef_borrow.window_type == WindowType::GameWindow
+                    && !windef_borrow.has_os_window_border
                 {
                     // Windows caches the cxWindowBorders size at window creation. Even if borders are removed or resized Windows will continue to use this value when evaluating regions
                     // and sizing windows. When maximized this means that our window position will be offset from the screen origin by (-cxWindowBorders,-cxWindowBorders). We want to
@@ -384,8 +390,8 @@ impl WindowsWindow {
                 }
             } else {
                 let use_corner_radius = self.window_mode == WindowMode::Windowed
-                    && windef_borrow.borrow().transparency_support != WindowTransparency::PerPixel
-                    && windef_borrow.borrow().corner_radius > 0;
+                    && windef_borrow.transparency_support != WindowTransparency::PerPixel
+                    && windef_borrow.corner_radius > 0;
                 if use_corner_radius {
                     unsafe {
                         region = CreateRoundRectRgn(
@@ -393,8 +399,8 @@ impl WindowsWindow {
                             0,
                             self.region_width.get() + 1,
                             self.region_height.get() + 1,
-                            windef_borrow.borrow().corner_radius,
-                            windef_borrow.borrow().corner_radius,
+                            windef_borrow.corner_radius,
+                            windef_borrow.corner_radius,
                         );
                     }
                 } else {
@@ -447,16 +453,15 @@ impl WindowsWindow {
     }
     pub fn is_enabled(&self) -> bool {
         let res = unsafe { !!IsWindowEnabled(self.hwnd.get()) };
-        res == 1
+        res.0 != 0
     }
     pub fn is_regular_window(&self) -> bool {
-        let windef_borrow = self.window_definitions.borrow();
-        let sec_borrow = windef_borrow.borrow();
-        sec_borrow.is_regular_window
+        let windef_borrow: &WindowDefinition = Rc::borrow(&self.window_definitions);
+        windef_borrow.is_regular_window
     }
     pub fn on_transparency_support_changed(&mut self, new_transparency: WindowTransparency) {
-        let windef_borrow = self.window_definitions.borrow();
-        if windef_borrow.borrow().transparency_support == WindowTransparency::PerPixel {
+        let windef_borrow: &WindowDefinition = Rc::borrow(&self.window_definitions);
+        if windef_borrow.transparency_support == WindowTransparency::PerPixel {
             let style = unsafe { GetWindowLongW(self.hwnd.get(), GWL_EXSTYLE) };
 
             if new_transparency == WindowTransparency::PerPixel {
@@ -475,8 +480,8 @@ impl WindowsWindow {
                 };
 
                 let res = unsafe { DwmExtendFrameIntoClientArea(self.hwnd.get(), &margins) };
-                if res != 0 {
-                    println!("Warning: {}", io::Error::last_os_error());
+                if let Err(error) = res {
+                    println!("Warning: {}", error);
                 }
             } else {
                 unsafe {
@@ -492,7 +497,7 @@ impl WindowsWindow {
             unsafe {
                 SetWindowPos(
                     self.hwnd.get(),
-                    ptr::null_mut(),
+                    0,
                     0,
                     0,
                     0,
@@ -531,9 +536,9 @@ impl GenericWindow for WindowsWindow {
         self.aspect_ratio
             .set(*new_width as f32 / *new_height as f32);
 
-        let windef_borrow = self.window_definitions.borrow();
+        let windef_borrow: &WindowDefinition = Rc::borrow(&self.window_definitions);
 
-        if windef_borrow.borrow().has_os_window_border {
+        if windef_borrow.has_os_window_border {
             let mut border_rect: RECT = unsafe { mem::zeroed() };
             unsafe {
                 AdjustWindowRectEx(
@@ -558,18 +563,18 @@ impl GenericWindow for WindowsWindow {
         self.virtual_width.set(*new_width);
         self.virtual_height.set(*new_height);
 
-        if windef_borrow.borrow().size_will_change_often {
+        if windef_borrow.size_will_change_often {
             let old_window_rect = window_info.rcWindow;
             let old_width = old_window_rect.right - old_window_rect.left;
             let old_height = old_window_rect.bottom - old_window_rect.top;
 
-            let min_retained_width = if windef_borrow.borrow().expected_max_width != -1 {
-                windef_borrow.borrow().expected_max_width
+            let min_retained_width = if windef_borrow.expected_max_width != -1 {
+                windef_borrow.expected_max_width
             } else {
                 old_width
             };
-            let min_retained_height = if windef_borrow.borrow().expected_max_height != -1 {
-                windef_borrow.borrow().expected_max_height
+            let min_retained_height = if windef_borrow.expected_max_height != -1 {
+                windef_borrow.expected_max_height
             } else {
                 old_height
             };
@@ -585,7 +590,7 @@ impl GenericWindow for WindowsWindow {
         unsafe {
             SetWindowPos(
                 self.hwnd.get(),
-                ptr::null_mut(),
+                0,
                 *window_x,
                 *window_y,
                 *new_width,
@@ -600,7 +605,7 @@ impl GenericWindow for WindowsWindow {
             );
         }
 
-        if windef_borrow.borrow().size_will_change_often && virtual_size_changed {
+        if windef_borrow.size_will_change_often && virtual_size_changed {
             let vwidth = self.virtual_width.clone();
             let vheight = self.virtual_height.clone();
             self.adjust_window_region(vwidth.get(), vheight.get());
@@ -636,8 +641,8 @@ impl GenericWindow for WindowsWindow {
         true
     }
     fn move_window_to(&self, x: &mut i32, y: &mut i32) {
-        let windef_borrow = self.window_definitions.borrow();
-        if windef_borrow.borrow().has_os_window_border {
+        let windef_borrow: &WindowDefinition = Rc::borrow(&self.window_definitions);
+        if windef_borrow.has_os_window_border {
             unsafe {
                 let window_style = GetWindowLongW(self.hwnd.get(), GWL_STYLE);
                 let window_ex_style = GetWindowLongW(self.hwnd.get(), GWL_EXSTYLE);
@@ -657,7 +662,7 @@ impl GenericWindow for WindowsWindow {
 
                 SetWindowPos(
                     self.hwnd.get(),
-                    ptr::null_mut(),
+                    0,
                     *x,
                     *y,
                     0,
@@ -668,10 +673,10 @@ impl GenericWindow for WindowsWindow {
         }
     }
     fn bring_to_front(&self, force: bool) {
-        let windef_borrow = self.window_definitions.borrow();
+        let windef_borrow: &WindowDefinition = Rc::borrow(&self.window_definitions);
         if self.is_regular_window() {
             unsafe {
-                if IsIconic(self.hwnd.get()) != 0 {
+                if IsIconic(self.hwnd.get()).0 != 0 {
                     ShowWindow(self.hwnd.get(), SW_RESTORE);
                 } else {
                     SetActiveWindow(self.hwnd.get());
@@ -686,7 +691,7 @@ impl GenericWindow for WindowsWindow {
                 flags |= SWP_NOACTIVATE;
             }
 
-            if windef_borrow.borrow().is_topmost_window {
+            if windef_borrow.is_topmost_window {
                 hwnd_insert_after = HWND_TOPMOST;
             }
 
@@ -705,14 +710,14 @@ impl GenericWindow for WindowsWindow {
         unsafe { ShowWindow(self.hwnd.get(), SW_RESTORE) };
     }
     fn show(&self) {
-        let windef_borrow = self.window_definitions.borrow();
+        let windef_borrow: &WindowDefinition = Rc::borrow(&self.window_definitions);
         if !self.is_visible.get() {
             self.is_visible.set(true);
 
             // Do not activate windows that do not take input; e.g. tool-tips and cursor decorators
             // Also dont activate if a window wants to appear but not activate itself
-            let should_activate = windef_borrow.borrow().accepts_input
-                && windef_borrow.borrow().activate_when_first_shown;
+            let should_activate = windef_borrow.accepts_input
+                && windef_borrow.activate_when_first_shown;
             unsafe {
                 ShowWindow(
                     self.hwnd.get(),
@@ -728,7 +733,7 @@ impl GenericWindow for WindowsWindow {
         }
     }
     fn set_window_mode(&mut self, new_window_mode: WindowMode) {
-        let windef_borrow = self.window_definitions.borrow();
+        let windef_borrow: &WindowDefinition = Rc::borrow(&self.window_definitions);
         if new_window_mode != self.window_mode {
             self.window_mode = new_window_mode;
 
@@ -738,13 +743,13 @@ impl GenericWindow for WindowsWindow {
             let fullscreen_mode_style = WS_POPUP;
             let mut windowed_mode_style = WS_OVERLAPPED | WS_SYSMENU | WS_CAPTION;
             if self.is_regular_window() {
-                if windef_borrow.borrow().supports_maximize {
+                if windef_borrow.supports_maximize {
                     windowed_mode_style |= WS_MAXIMIZEBOX;
                 }
-                if windef_borrow.borrow().supports_minimize {
+                if windef_borrow.supports_minimize {
                     windowed_mode_style |= WS_MINIMIZEBOX;
                 }
-                if windef_borrow.borrow().has_sizing_frame {
+                if windef_borrow.has_sizing_frame {
                     windowed_mode_style |= WS_THICKFRAME;
                 } else {
                     windowed_mode_style |= WS_BORDER;
@@ -756,9 +761,9 @@ impl GenericWindow for WindowsWindow {
             if new_window_mode == WindowMode::WindowedFullscreen
                 || new_window_mode == WindowMode::Fullscreen
             {
-                let is_borderless_game_window = windef_borrow.borrow().window_type
+                let is_borderless_game_window = windef_borrow.window_type
                     == WindowType::GameWindow
-                    && !windef_borrow.borrow().has_os_window_border;
+                    && !windef_borrow.has_os_window_border;
                 unsafe {
                     GetWindowPlacement(self.hwnd.get(), &mut self.pre_fullscreen_window_placement);
                 }
@@ -776,7 +781,7 @@ impl GenericWindow for WindowsWindow {
                     SetWindowLongW(self.hwnd.get(), GWL_STYLE, window_style);
                     SetWindowPos(
                         self.hwnd.get(),
-                        ptr::null_mut(),
+                        0,
                         0,
                         0,
                         0,
@@ -847,7 +852,7 @@ impl GenericWindow for WindowsWindow {
                     SetWindowLongW(self.hwnd.get(), GWL_STYLE, window_style);
                     SetWindowPos(
                         self.hwnd.get(),
-                        ptr::null_mut(),
+                        0,
                         0,
                         0,
                         0,
@@ -865,11 +870,11 @@ impl GenericWindow for WindowsWindow {
     }
     fn is_maximized(&self) -> bool {
         let zoomed = unsafe { !!IsZoomed(self.hwnd.get()) };
-        zoomed == 1
+        zoomed.0 != 0
     }
     fn is_minimized(&self) -> bool {
         let iconic = unsafe { !!IsIconic(self.hwnd.get()) };
-        iconic == 1
+        iconic.0 != 0
     }
     fn is_visible(&self) -> bool {
         self.is_visible.get()
@@ -885,7 +890,7 @@ impl GenericWindow for WindowsWindow {
         window_placement.length = mem::size_of::<WINDOWPLACEMENT>() as u32;
 
         let res = unsafe { GetWindowPlacement(self.hwnd.get(), &mut window_placement) };
-        if res != 0 {
+        if res.0 != 0 {
             let restored = window_placement.rcNormalPosition;
 
             *x = restored.left;
@@ -912,21 +917,21 @@ impl GenericWindow for WindowsWindow {
         }
     }
     fn enable(&self, enable: bool) {
-        unsafe { EnableWindow(self.hwnd.get(), if enable { 1 } else { 0 }) };
+        unsafe { EnableWindow(self.hwnd.get(), if enable { BOOL(1) } else { BOOL(0) }) };
     }
     fn is_point_in_window(&self, x: i32, y: i32) -> bool {
         let mut result = false;
         let region = self.make_window_region_object();
-        let res = unsafe { !!PtInRegion(region, x, y) == 1 };
+        let res = unsafe { !!PtInRegion(region, x, y).0 == 1 };
         unsafe {
-            DeleteObject(mem::transmute(region));
+            DeleteObject(region);
         }
         result == res
     }
     fn get_window_border_size(&self) -> u32 {
-        let windef_borrow = self.window_definitions.borrow();
-        if windef_borrow.borrow().window_type == WindowType::GameWindow
-            && !windef_borrow.borrow().has_os_window_border
+        let windef_borrow: &WindowDefinition = Rc::borrow(&self.window_definitions);
+        if windef_borrow.window_type == WindowType::GameWindow
+            && !windef_borrow.has_os_window_border
         {
             // Our borderless game windows actually have a thick border to allow sizing, which we draw over to simulate
             // a borderless window. We return zero here so that the game will correctly behave as if this is truly a
@@ -951,25 +956,25 @@ impl GenericWindow for WindowsWindow {
         unsafe { GetForegroundWindow() == self.hwnd.get() }
     }
     fn is_fullscreen_supported(&self) -> bool {
-        unsafe { !GetSystemMetrics(SM_REMOTESESSION) }
+        unsafe { GetSystemMetrics(SM_REMOTESESSION) != 0 }
     }
     fn set_text(&self, text: Vec<u16>) {
         //TODO: genericize the text variable
         unsafe {
-            SetWindowTextW(self.hwnd.get(), text.as_ptr());
+            SetWindowTextW(self.hwnd.get(), PWSTR(text.as_mut_ptr()));
         }
     }
-    fn get_definition(&self) -> Rc<RefCell<WindowDefinition>> {
-        self.window_definitions.borrow().clone()
+    fn get_definition(&self) -> Rc<WindowDefinition> {
+        self.window_definitions
     }
     fn adjust_cached_size(&self, size: &mut (i32, i32)) {
-        let windef_borrow = self.window_definitions.borrow();
+        let windef_borrow: &WindowDefinition = Rc::borrow(&self.window_definitions);
         //Unreal Engine 4's check for if the FGenericWindowDefinition is valid is necessary because this is a pointer. Is it necessary in my code?
         if
         /* self.window_definitions.is_valid() && */
-        windef_borrow.borrow().size_will_change_often {
+        windef_borrow.size_will_change_often {
             *size = (self.virtual_width.get(), self.virtual_height.get());
-        } else if !self.hwnd.get().is_null() {
+        } else if self.hwnd.get() != 0 {
             unsafe {
                 let mut client_rect = RECT::default();
                 GetClientRect(self.hwnd.get(), &mut client_rect);
@@ -1010,7 +1015,7 @@ fn create_window(
             param,
         )
     } {
-        v if v.is_null() => Err(io::Error::last_os_error()),
+        v if v == 0 => Err(io::Error::last_os_error()),
         v => Ok(v),
     }
 }

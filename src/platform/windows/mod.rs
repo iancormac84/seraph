@@ -1,4 +1,3 @@
-#[cfg(debug_assertions)]
 use std::io::Write;
 use std::{io, process};
 
