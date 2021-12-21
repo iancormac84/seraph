@@ -1,8 +1,6 @@
+use crate::core::math::{color::Color, int_rect::IntRect};
 use cgmath::Vector2;
-#[cfg(target_os = "windows")]
-use winapi::{BOOL, RECT};
-
-type FloatVec2 = Vector2<f32>;
+use std::path::Path;
 
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub enum MouseCursor {
@@ -95,32 +93,58 @@ impl MouseCursor {
 }
 
 pub trait ICursor {
-	/** The position of the cursor */
-	fn get_position(&self) -> FloatVec2;
+    /** Creates a hardware cursor from file. Can return None when not available. */
+    fn create_cursor_from_file<P: AsRef<Path>>(
+        path_to_cursor_without_extension: P,
+        hotspot: Vector2<f32>,
+    ) -> Option<Self>
+    where
+        Self: Sized;
 
-	/** Sets the position of the cursor */
-	fn set_position(&mut self, x: i32, y: i32);
+    /** Is create_cursor_from_rgba_buffer() supported by this cursor? */
+    fn is_create_cursor_from_rgba_buffer_supported() -> bool;
 
-	/** Sets the cursor */
-	fn set_type(&mut self, new_cursor: MouseCursor);
+    /** Creates a hardware cursor from bitmap data. Can return nullptr when not available. */
+    fn create_cursor_from_rgba_buffer(
+        pixels: Color,
+        width: i32,
+        height: i32,
+        hotspot: Vector2<f32>,
+    ) -> Option<Self>
+    where
+        Self: Sized;
 
-	/** Gets the current type of the cursor */
-	fn get_type(&self) -> &MouseCursor;
+    /** The position of the cursor */
+    fn get_position(&self) -> Vector2<f32>;
 
-	/** Gets the size of the cursor */
-	fn get_size(&self, width: &mut i32, height: &mut i32);
+    /** Sets the position of the cursor */
+    fn set_position(&mut self, x: i32, y: i32);
 
-	/**
-	 * Shows or hides the cursor
-	 *
-	 * @param bShow	true to show the mouse cursor, false to hide it
-	 */
-	fn show(&self, show: BOOL);
+    /** Sets the cursor */
+    fn set_type(&mut self, new_cursor: MouseCursor);
 
-	/**
-	 * Locks the cursor to the passed in bounds
-	 * 
-	 * @param Bounds	The bounds to lock the cursor to.  Pass None to unlock.
-	 */
-	fn lock(&self, bounds: *const RECT);
+    /** Gets the current type of the cursor */
+    fn get_type(&self) -> &MouseCursor;
+
+    /** Gets the size of the cursor */
+    fn get_size(&self, width: &mut i32, height: &mut i32);
+
+    /**
+     * Shows or hides the cursor
+     *
+     * @param show	true to show the mouse cursor, false to hide it
+     */
+    fn show(&self, show: bool);
+
+    /**
+     * Locks the cursor to the passed in bounds
+     *
+     * @param bounds	The bounds to lock the cursor to.  Pass None to unlock.
+     */
+    fn lock<R: Into<IntRect>>(&self, bounds: &R);
+
+    /*/**
+     * Allows overriding the shape of a particular cursor.
+     */
+    virtual void SetTypeShape(EMouseCursor::Type InCursorType, void* CursorHandle) = 0;*/
 }

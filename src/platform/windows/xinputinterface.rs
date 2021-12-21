@@ -1,5 +1,5 @@
-use platform::generic::application_message_handler::{ApplicationMessageHandler, GamepadKeyNames};
-use platform::generic::iinputinterface::ForceFeedbackValues;
+use crate::generic::application_message_handler::{ApplicationMessageHandler, GamepadKeyNames};
+use crate::generic::iinputinterface::ForceFeedbackValues;
 use std::rc::Rc;
 
 pub const MAX_NUM_XINPUT_CONTROLLERS: usize = 4;
@@ -35,22 +35,24 @@ struct ControllerState {
 
     /** If the controller is currently connected */
     is_connected: bool,
-    
+
     /** Current force feedback values */
     force_feedback: ForceFeedbackValues,
 }
 
 pub struct XInputInterface {
-	needs_controller_state_update: bool,
-	is_gamepad_attached: bool,
-	x360_to_xbox_controller_mapping: [u8; MAX_NUM_CONTROLLER_BUTTONS],
-	controller_states: [ControllerState; MAX_NUM_XINPUT_CONTROLLERS],
-	initial_button_replay_delay: f32,
-	button_replay_delay: f32,
-	buttons: [GamepadKeyNames; MAX_NUM_CONTROLLER_BUTTONS],
-    message_handler: Rc<ApplicationMessageHandler>,
+    needs_controller_state_update: bool,
+    is_gamepad_attached: bool,
+    x360_to_xbox_controller_mapping: [u8; MAX_NUM_CONTROLLER_BUTTONS],
+    controller_states: [ControllerState; MAX_NUM_XINPUT_CONTROLLERS],
+    initial_button_replay_delay: f32,
+    button_replay_delay: f32,
+    buttons: [GamepadKeyNames; MAX_NUM_CONTROLLER_BUTTONS],
+    message_handler: Rc<dyn ApplicationMessageHandler>,
 }
 
 impl XInputInterface {
-	pub fn set_needs_controller_state_update(&mut self) { self.needs_controller_state_update = true; }
+    pub fn set_needs_controller_state_update(&mut self) {
+        self.needs_controller_state_update = true;
+    }
 }
