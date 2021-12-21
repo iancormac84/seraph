@@ -34,7 +34,7 @@ impl TryFrom<i32> for MessageBoxResult {
             _ => {
                 let msg = format!("unexpected message box result {}", value);
                 Err(io::Error::new(io::ErrorKind::Other, &msg[..]))
-            },
+            }
         }
     }
 }

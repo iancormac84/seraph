@@ -27,6 +27,5 @@ features = [
 [dependencies]
 bitflags = "*"
 cgmath = "*"
-once_cell = "*"
-parking_lot = "*"
+lazy_static = "*"
 winreg = "*"

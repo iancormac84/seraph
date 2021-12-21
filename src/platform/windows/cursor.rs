@@ -149,7 +149,7 @@ impl ICursor for WindowsCursor {
             }
         }
     }
-    fn lock(&self, bounds: &RECT) {
+    fn lock(&self, bounds: *const RECT) {
         unsafe {
             ClipCursor(bounds);
         }

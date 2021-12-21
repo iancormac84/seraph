@@ -141,7 +141,7 @@ pub trait ICursor {
      *
      * @param bounds	The bounds to lock the cursor to.  Pass None to unlock.
      */
-    fn lock<R: Into<IntRect>>(&self, bounds: &R);
+    fn lock<R: Into<IntRect>>(&self, bounds: *const R);
 
     /*/**
      * Allows overriding the shape of a particular cursor.

@@ -1,11 +1,10 @@
-use cgmath::Point2;
-//use dwmapi;
 use crate::generic::application::{
     GenericApplication, MonitorInfo, PlatformRect, DEBUG_ACTION_ZONE_RATIO, DEBUG_SAFE_ZONE_RATIO,
 };
 use crate::generic::application_message_handler::{
     ApplicationMessageHandler, WindowAction, WindowSizeLimits, WindowZone,
 };
+use cgmath::Point2;
 //use crate::generic::cursor::ICursor;
 use crate::generic::window::GenericWindow;
 use crate::generic::window_definition::{WindowDefinition, WindowTransparency, WindowType};
@@ -14,8 +13,7 @@ use crate::windows::utils;
 use crate::windows::utils::ToWide;
 use crate::windows::window::{WindowsWindow, APP_WINDOW_CLASS};
 use crate::windows::xinputinterface::XInputInterface;
-use once_cell::sync::Lazy;
-use parking_lot::Mutex;
+use lazy_static::lazy_static;
 use std::borrow::Borrow;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -112,49 +110,51 @@ type IntPoint2 = Point2<i32>;
 pub static mut WINDOWS_APPLICATION: Option<&'static Arc<WindowsApplication>> = None;
 static INIT_APPLICATION: Once = Once::new();
 
-static WINDOWS_MESSAGE_STRINGS: Lazy<Mutex<BTreeMap<u32, &'static str>>> = Lazy::new(|| {
-    let mut result: BTreeMap<u32, &'static str> = BTreeMap::new();
-    result.insert(WM_INPUTLANGCHANGEREQUEST, "WM_INPUTLANGCHANGEREQUEST");
-    result.insert(WM_INPUTLANGCHANGE, "WM_INPUTLANGCHANGE");
-    result.insert(WM_IME_SETCONTEXT, "WM_IME_SETCONTEXT");
-    result.insert(WM_IME_NOTIFY, "WM_IME_NOTIFY");
-    result.insert(WM_IME_REQUEST, "WM_IME_REQUEST");
-    result.insert(WM_IME_STARTCOMPOSITION, "WM_IME_STARTCOMPOSITION");
-    result.insert(WM_IME_COMPOSITION, "WM_IME_COMPOSITION");
-    result.insert(WM_IME_ENDCOMPOSITION, "WM_IME_ENDCOMPOSITION");
-    result.insert(WM_IME_CHAR, "WM_IME_CHAR");
-    Mutex::new(result)
-});
-static IMN_STRINGS: Lazy<Mutex<BTreeMap<u32, &'static str>>> = Lazy::new(|| {
-    let mut result: BTreeMap<u32, &'static str> = BTreeMap::new();
-    result.insert(IMN_CLOSESTATUSWINDOW, "IMN_CLOSESTATUSWINDOW");
-    result.insert(IMN_OPENSTATUSWINDOW, "IMN_OPENSTATUSWINDOW");
-    result.insert(IMN_CHANGECANDIDATE, "IMN_CHANGECANDIDATE");
-    result.insert(IMN_CLOSECANDIDATE, "IMN_CLOSECANDIDATE");
-    result.insert(IMN_OPENCANDIDATE, "IMN_OPENCANDIDATE");
-    result.insert(IMN_SETCONVERSIONMODE, "IMN_SETCONVERSIONMODE");
-    result.insert(IMN_SETSENTENCEMODE, "IMN_SETSENTENCEMODE");
-    result.insert(IMN_SETOPENSTATUS, "IMN_SETOPENSTATUS");
-    result.insert(IMN_SETCANDIDATEPOS, "IMN_SETCANDIDATEPOS");
-    result.insert(IMN_SETCOMPOSITIONFONT, "IMN_SETCOMPOSITIONFONT");
-    result.insert(IMN_SETCOMPOSITIONWINDOW, "IMN_SETCOMPOSITIONWINDOW");
-    result.insert(IMN_SETSTATUSWINDOWPOS, "IMN_SETSTATUSWINDOWPOS");
-    result.insert(IMN_GUIDELINE, "IMN_GUIDELINE");
-    result.insert(IMN_PRIVATE, "IMN_PRIVATE");
-    Mutex::new(result)
-});
-static IMR_STRINGS: Lazy<Mutex<BTreeMap<u32, &'static str>>> = Lazy::new(|| {
-    let mut result: BTreeMap<u32, &'static str> = BTreeMap::new();
-    result.insert(IMR_CANDIDATEWINDOW, "IMR_CANDIDATEWINDOW");
-    result.insert(IMR_COMPOSITIONFONT, "IMR_COMPOSITIONFONT");
-    result.insert(IMR_COMPOSITIONWINDOW, "IMR_COMPOSITIONWINDOW");
-    result.insert(IMR_CONFIRMRECONVERTSTRING, "IMR_CONFIRMRECONVERTSTRING");
-    result.insert(IMR_DOCUMENTFEED, "IMR_DOCUMENTFEED");
-    result.insert(IMR_QUERYCHARPOSITION, "IMR_QUERYCHARPOSITION");
-    result.insert(IMR_RECONVERTSTRING, "IMR_RECONVERTSTRING");
-    Mutex::new(result)
-});
-//static ref MINIMIZED_WINDOW_POSITION: IntPoint2 = IntPoint2::new(-32000, -32000);
+lazy_static! {
+    static ref WINDOWS_MESSAGE_STRINGS: BTreeMap<u32, &'static str> = {
+        let mut result: BTreeMap<u32, &'static str> = BTreeMap::new();
+        result.insert(WM_INPUTLANGCHANGEREQUEST, "WM_INPUTLANGCHANGEREQUEST");
+        result.insert(WM_INPUTLANGCHANGE, "WM_INPUTLANGCHANGE");
+        result.insert(WM_IME_SETCONTEXT, "WM_IME_SETCONTEXT");
+        result.insert(WM_IME_NOTIFY, "WM_IME_NOTIFY");
+        result.insert(WM_IME_REQUEST, "WM_IME_REQUEST");
+        result.insert(WM_IME_STARTCOMPOSITION, "WM_IME_STARTCOMPOSITION");
+        result.insert(WM_IME_COMPOSITION, "WM_IME_COMPOSITION");
+        result.insert(WM_IME_ENDCOMPOSITION, "WM_IME_ENDCOMPOSITION");
+        result.insert(WM_IME_CHAR, "WM_IME_CHAR");
+        result
+    };
+    static ref IMN_STRINGS: BTreeMap<u32, &'static str> = {
+        let mut result: BTreeMap<u32, &'static str> = BTreeMap::new();
+        result.insert(IMN_CLOSESTATUSWINDOW, "IMN_CLOSESTATUSWINDOW");
+        result.insert(IMN_OPENSTATUSWINDOW, "IMN_OPENSTATUSWINDOW");
+        result.insert(IMN_CHANGECANDIDATE, "IMN_CHANGECANDIDATE");
+        result.insert(IMN_CLOSECANDIDATE, "IMN_CLOSECANDIDATE");
+        result.insert(IMN_OPENCANDIDATE, "IMN_OPENCANDIDATE");
+        result.insert(IMN_SETCONVERSIONMODE, "IMN_SETCONVERSIONMODE");
+        result.insert(IMN_SETSENTENCEMODE, "IMN_SETSENTENCEMODE");
+        result.insert(IMN_SETOPENSTATUS, "IMN_SETOPENSTATUS");
+        result.insert(IMN_SETCANDIDATEPOS, "IMN_SETCANDIDATEPOS");
+        result.insert(IMN_SETCOMPOSITIONFONT, "IMN_SETCOMPOSITIONFONT");
+        result.insert(IMN_SETCOMPOSITIONWINDOW, "IMN_SETCOMPOSITIONWINDOW");
+        result.insert(IMN_SETSTATUSWINDOWPOS, "IMN_SETSTATUSWINDOWPOS");
+        result.insert(IMN_GUIDELINE, "IMN_GUIDELINE");
+        result.insert(IMN_PRIVATE, "IMN_PRIVATE");
+        result
+    };
+    static ref IMR_STRINGS: BTreeMap<u32, &'static str> = {
+        let mut result: BTreeMap<u32, &'static str> = BTreeMap::new();
+        result.insert(IMR_CANDIDATEWINDOW, "IMR_CANDIDATEWINDOW");
+        result.insert(IMR_COMPOSITIONFONT, "IMR_COMPOSITIONFONT");
+        result.insert(IMR_COMPOSITIONWINDOW, "IMR_COMPOSITIONWINDOW");
+        result.insert(IMR_CONFIRMRECONVERTSTRING, "IMR_CONFIRMRECONVERTSTRING");
+        result.insert(IMR_DOCUMENTFEED, "IMR_DOCUMENTFEED");
+        result.insert(IMR_QUERYCHARPOSITION, "IMR_QUERYCHARPOSITION");
+        result.insert(IMR_RECONVERTSTRING, "IMR_RECONVERTSTRING");
+        result
+    };
+    static ref MINIMIZED_WINDOW_POSITION: IntPoint2 = IntPoint2::new(-32000, -32000);
+}
 
 static HIT_RESULTS: [LRESULT; 15] = [
     HTNOWHERE as isize,
@@ -593,7 +593,8 @@ impl WindowsApplication {
                             let mmi = mem::transmute::<LPARAM, *const MINMAXINFO>(lparam);
                             *mmi
                         };
-                        let windef: &WindowDefinition = Rc::borrow(&current_native_event_window.get_definition());
+                        let windef: &WindowDefinition =
+                            Rc::borrow(&current_native_event_window.get_definition());
                         let ref size_limits: WindowSizeLimits = windef.size_limits;
 
                         // We need to inflate the max values if using an OS window border

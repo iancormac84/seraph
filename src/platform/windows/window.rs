@@ -219,11 +219,7 @@ impl WindowsWindow {
             match create_window(
                 window_ex_style,
                 PWSTR(APP_WINDOW_CLASS.to_wide_null().as_mut_ptr()),
-                PWSTR(
-                    (&windef_borrow.title[..])
-                        .to_wide_null()
-                        .as_mut_ptr(),
-                ),
+                PWSTR((&windef_borrow.title[..]).to_wide_null().as_mut_ptr()),
                 window_style,
                 window_x,
                 window_y,
@@ -320,8 +316,7 @@ impl WindowsWindow {
             }
         }
 
-        if windef_borrow.is_regular_window && !windef_borrow.has_os_window_border
-        {
+        if windef_borrow.is_regular_window && !windef_borrow.has_os_window_border {
             window_style |= WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU;
 
             if windef_borrow.supports_maximize {
@@ -716,8 +711,8 @@ impl GenericWindow for WindowsWindow {
 
             // Do not activate windows that do not take input; e.g. tool-tips and cursor decorators
             // Also dont activate if a window wants to appear but not activate itself
-            let should_activate = windef_borrow.accepts_input
-                && windef_borrow.activate_when_first_shown;
+            let should_activate =
+                windef_borrow.accepts_input && windef_borrow.activate_when_first_shown;
             unsafe {
                 ShowWindow(
                     self.hwnd.get(),
@@ -761,8 +756,7 @@ impl GenericWindow for WindowsWindow {
             if new_window_mode == WindowMode::WindowedFullscreen
                 || new_window_mode == WindowMode::Fullscreen
             {
-                let is_borderless_game_window = windef_borrow.window_type
-                    == WindowType::GameWindow
+                let is_borderless_game_window = windef_borrow.window_type == WindowType::GameWindow
                     && !windef_borrow.has_os_window_border;
                 unsafe {
                     GetWindowPlacement(self.hwnd.get(), &mut self.pre_fullscreen_window_placement);
