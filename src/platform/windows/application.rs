@@ -969,6 +969,19 @@ impl WindowsApplication {
             self.modifier_key_state[ModifierKey::CapsLock as usize]        = (GetKeyState(VK_CAPITAL) & 0x0001) != 0;
         }
     }*/
+    // Defined as a global so that it can be extern'd by UELibrary
+    fn windows_application_wnd_proc(
+        hwnd: HWND,
+        msg: u32,
+        wparam: WPARAM,
+        lparam: LPARAM,
+    ) -> LRESULT {
+        unsafe {
+            WINDOWS_APPLICATION
+                .unwrap()
+                .process_message(hwnd, msg, wparam, lparam) as isize
+        }
+    }
     pub fn pump_messages(&self, time_delta: f32) {
         unsafe {
             let mut message: MSG = mem::zeroed();
@@ -996,9 +1009,7 @@ impl WindowsApplication {
                 "Not found"
             }
         );
-        WINDOWS_APPLICATION
-            .unwrap()
-            .process_message(hwnd, msg, wparam, lparam) as isize
+        Self::windows_application_wnd_proc(hwnd, msg, wparam, lparam)
     }
     fn defer_message(
         &self,
