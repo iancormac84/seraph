@@ -108,8 +108,8 @@ use winreg::RegKey;
 
 type IntPoint2 = Point2<i32>;
 
-pub static mut WINDOWS_APPLICATION: Option<&'static Arc<WindowsApplication>> = None;
-static INIT_APPLICATION: Once = Once::new();
+//pub static mut WINDOWS_APPLICATION: Option<&'static Arc<WindowsApplication>> = None;
+//static INIT_APPLICATION: Once = Once::new();
 
 lazy_static! {
     static ref WINDOWS_MESSAGE_STRINGS: BTreeMap<u32, &'static str> = {
@@ -271,7 +271,7 @@ pub struct DeferredWindowsDragDropOperation {
 //I just got an idea about making it a struct that deals with a type that implements a trait that contains the process_message method, but probably not.
 //Actually, this will most likely remain a trait whose method wraps the real ProcessMessage method, since the real method needs an ABI signature that is not compatible with Rust's method
 //call signatures.
-pub trait IWindowsMessageHandler {
+pub trait IWindowsMessageHandler: PartialEq {
     fn process_message(
         &mut self,
         hwnd: HWND,
@@ -294,7 +294,7 @@ pub enum ModifierKey {
     Count = 7,
 }
 
-pub fn create_windows_application(
+/*pub fn create_windows_application(
     hinstance: HINSTANCE,
     hicon: HICON,
 ) -> &'static Arc<WindowsApplication> {
@@ -307,7 +307,7 @@ unsafe fn init_windows_application(hinstance: HINSTANCE, hicon: HICON) {
     let mut app = utils::leak(Arc::new(windows_application));
     println!("app address is {:p}", &app);
     WINDOWS_APPLICATION = Some(app);
-}
+}*/
 
 //TODO implement GenericApplication trait. Also most likely trait based on IForceFeedbackSystem.
 #[derive(Debug, Clone)]
@@ -322,6 +322,7 @@ pub struct WindowsApplication {
     modifier_key_state: [bool; ModifierKey::Count as usize],
     in_modal_size_loop: bool,
     pub display_metrics: DisplayMetrics,
+    //message_handlers: Vec<&dyn IWindowsMessageHandler>,
     //startup_sticky_keys: STICKYKEYS,
     //startup_toggle_keys: TOGGLEKEYS,
     //startup_filter_keys: FILTERKEYS,
@@ -381,6 +382,7 @@ impl WindowsApplication {
             modifier_key_state: [false; ModifierKey::Count as usize],
             in_modal_size_loop: false,
             display_metrics: display_metrics,
+            //message_handlers: vec![],
             //startup_sticky_keys: STICKYKEYS,
             //startup_toggle_keys: TOGGLEKEYS,
             //startup_filter_keys: FILTERKEYS,
@@ -1016,6 +1018,10 @@ impl WindowsApplication {
         raw_input_flags: u32,
     ) {
     }
+    /*fn add_message_handler(&mut self, in_message_handler: &dyn IWindowsMessageHandler) {
+        if !self.message_handlers.contains(&in_message_handler) 
+        self.message_handlers.push(in_message_handler);
+    }*/
 }
 
 fn get_monitor_size_from_edid(

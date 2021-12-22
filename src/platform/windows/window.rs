@@ -3,8 +3,9 @@ use crate::generic::window_definition::{
     WindowActivationPolicy, WindowDefinition, WindowTransparency, WindowType,
 };
 use crate::windows::application::WindowsApplication;
-use crate::windows::application::WINDOWS_APPLICATION;
+//se crate::windows::application::WINDOWS_APPLICATION;
 use crate::windows::utils::ToWide;
+use std::borrow::Borrow;
 use std::{
     cell::Cell,
     cmp, fmt, io, mem,
@@ -121,7 +122,7 @@ impl WindowsWindow {
             wnd_plcment1.length = mem::size_of::<WINDOWPLACEMENT>() as u32;
             WindowsWindow {
                 app_window_class: APP_WINDOW_CLASS,
-                owning_application: Arc::downgrade(WINDOWS_APPLICATION.unwrap()),
+                owning_application: Weak::new(),
                 hwnd: Cell::new(0),
                 region_height: Cell::new(-1),
                 region_width: Cell::new(-1),
@@ -148,6 +149,7 @@ impl WindowsWindow {
     }
     pub fn initialize(
         &mut self,
+        in_windows_application: &Arc<WindowsApplication>,
         in_definition: WindowDefinition,
         instance: HINSTANCE,
         parent: Option<Rc<WindowsWindow>>,
@@ -156,6 +158,7 @@ impl WindowsWindow {
         println!("Just reach in initialize");
 
         self.definition = in_definition;
+        self.owning_application = Arc::<WindowsApplication>::downgrade(&in_windows_application);
 
         let mut window_ex_style: u32 = 0;
         let mut window_style: u32 = 0;
@@ -175,11 +178,7 @@ impl WindowsWindow {
         let mut window_width = client_width;
         let mut window_height = client_height;
 
-        let application_supports_per_pixel_blending = unsafe {
-            WINDOWS_APPLICATION
-                .unwrap()
-                .get_window_transparency_support()
-        } == WindowTransparency::PerPixel;
+        let application_supports_per_pixel_blending = self.owning_application.get_window_transparency_support() == WindowTransparency::PerPixel;
 
         if !self.definition.has_os_window_border {
             window_ex_style = WS_EX_WINDOWEDGE;
