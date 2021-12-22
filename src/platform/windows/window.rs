@@ -1,12 +1,14 @@
 use crate::generic::window::{GenericWindow, WindowMode};
-use crate::generic::window_definition::{WindowDefinition, WindowTransparency, WindowType};
+use crate::generic::window_definition::{
+    WindowActivationPolicy, WindowDefinition, WindowTransparency, WindowType,
+};
 use crate::windows::application::WindowsApplication;
 use crate::windows::application::WINDOWS_APPLICATION;
 use crate::windows::utils::ToWide;
 use std::{
     borrow::{Borrow, BorrowMut},
     cell::{Cell, RefCell},
-    cmp, io, mem,
+    cmp, fmt, io, mem,
     os::raw::c_void,
     ptr,
     rc::Rc,
@@ -25,6 +27,7 @@ use windows::Win32::{
             MONITOR_DEFAULTTOPRIMARY,
         },
     },
+    System::Ole::RevokeDragDrop,
     UI::{
         Controls::MARGINS,
         Input::KeyboardAndMouse::{
@@ -33,15 +36,16 @@ use windows::Win32::{
         WindowsAndMessaging::{
             AdjustWindowRectEx, CreateWindowExW, GetClientRect, GetForegroundWindow,
             GetSystemMetrics, GetWindowInfo, GetWindowLongW, GetWindowPlacement, GetWindowRect,
-            IsIconic, IsZoomed, SetLayeredWindowAttributes, SetWindowLongW, SetWindowPlacement,
-            SetWindowPos, SetWindowTextW, ShowWindow, GWL_EXSTYLE, GWL_STYLE, HMENU, HWND_TOP,
-            HWND_TOPMOST, LWA_ALPHA, MB_ICONEXCLAMATION, MB_OK, SM_CYCAPTION, SM_REMOTESESSION,
-            SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOREDRAW,
-            SWP_NOSENDCHANGING, SWP_NOSIZE, SWP_NOZORDER, SW_HIDE, SW_MAXIMIZE, SW_MINIMIZE,
-            SW_RESTORE, SW_SHOW, SW_SHOWNA, WINDOWINFO, WINDOWPLACEMENT, WS_BORDER, WS_CAPTION,
-            WS_CLIPCHILDREN, WS_CLIPSIBLINGS, WS_EX_APPWINDOW, WS_EX_COMPOSITED, WS_EX_LAYERED,
-            WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_EX_WINDOWEDGE, WS_MAXIMIZEBOX,
-            WS_MINIMIZEBOX, WS_OVERLAPPED, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
+            IsIconic, IsWindow, IsZoomed, SetLayeredWindowAttributes, SetWindowLongW,
+            SetWindowPlacement, SetWindowPos, SetWindowTextW, ShowWindow, GWL_EXSTYLE, GWL_STYLE,
+            HMENU, HWND_TOP, HWND_TOPMOST, LWA_ALPHA, MB_ICONEXCLAMATION, MB_OK, SM_CYCAPTION,
+            SM_REMOTESESSION, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER,
+            SWP_NOREDRAW, SWP_NOSENDCHANGING, SWP_NOSIZE, SWP_NOZORDER, SW_HIDE, SW_MAXIMIZE,
+            SW_MINIMIZE, SW_RESTORE, SW_SHOW, SW_SHOWMAXIMIZED, SW_SHOWMINNOACTIVE, SW_SHOWNA,
+            SW_SHOWNOACTIVATE, WINDOWINFO, WINDOWPLACEMENT, WS_BORDER, WS_CAPTION, WS_CLIPCHILDREN,
+            WS_CLIPSIBLINGS, WS_EX_APPWINDOW, WS_EX_COMPOSITED, WS_EX_LAYERED, WS_EX_TOOLWINDOW,
+            WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_EX_WINDOWEDGE, WS_MAXIMIZEBOX, WS_MINIMIZEBOX,
+            WS_OVERLAPPED, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
         },
     },
 };
@@ -49,7 +53,6 @@ use windows::Win32::{
 pub const APP_WINDOW_CLASS: &'static str = "CormacWindow";
 
 //TODO can I make this capable of clone? I want to try this so I don't have to do a clone in the WindowsApplication::find_window_by_hwnd method.
-#[derive(Debug)]
 pub struct WindowsWindow {
     pub app_window_class: &'static str,
     pub owning_application: Weak<WindowsApplication>,
@@ -70,6 +73,40 @@ pub struct WindowsWindow {
     dpi_scale_factor: f32,
     handle_manual_dpi_changes: bool,
     window_definitions: Rc<WindowDefinition>,
+}
+
+impl fmt::Debug for WindowsWindow {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let pre_fullscreen_window_placement = format!("WINDOWPLACEMENT {{ length: {}, flags: {}, showCmd: {}, ptMinPosition: POINT {{ x: {}, y: {} }}, ptMaxPosition: POINT {{ x: {}, y: {} }}, rcNormalPosition: RECT {{ left: {}, top: {}, right: {}, bottom: {} }} }}", &self.pre_fullscreen_window_placement.length, &self.pre_fullscreen_window_placement.flags, &self.pre_fullscreen_window_placement.showCmd, &self.pre_fullscreen_window_placement.ptMinPosition.x, &self.pre_fullscreen_window_placement.ptMinPosition.y, &self.pre_fullscreen_window_placement.ptMaxPosition.x, &self.pre_fullscreen_window_placement.ptMaxPosition.y, &self.pre_fullscreen_window_placement.rcNormalPosition.left, &self.pre_fullscreen_window_placement.rcNormalPosition.top, &self.pre_fullscreen_window_placement.rcNormalPosition.right, &self.pre_fullscreen_window_placement.rcNormalPosition.bottom);
+        let pre_parent_minimized_window_placement = format!("WINDOWPLACEMENT {{ length: {}, flags: {}, showCmd: {}, ptMinPosition: POINT {{ x: {}, y: {} }}, ptMaxPosition: POINT {{ x: {}, y: {} }}, rcNormalPosition: RECT {{ left: {}, top: {}, right: {}, bottom: {} }} }}", &self.pre_parent_minimized_window_placement.length, &self.pre_parent_minimized_window_placement.flags, &self.pre_parent_minimized_window_placement.showCmd, &self.pre_parent_minimized_window_placement.ptMinPosition.x, &self.pre_parent_minimized_window_placement.ptMinPosition.y, &self.pre_parent_minimized_window_placement.ptMaxPosition.x, &self.pre_parent_minimized_window_placement.ptMaxPosition.y, &self.pre_parent_minimized_window_placement.rcNormalPosition.left, &self.pre_parent_minimized_window_placement.rcNormalPosition.top, &self.pre_parent_minimized_window_placement.rcNormalPosition.right, &self.pre_parent_minimized_window_placement.rcNormalPosition.bottom);
+        f.debug_struct("WindowsWindow")
+            .field("app_window_class", &self.app_window_class)
+            .field("owning_application", &self.owning_application)
+            .field("hwnd", &self.hwnd)
+            .field("region_height", &self.region_height)
+            .field("region_width", &self.region_width)
+            .field("window_mode", &self.window_mode)
+            .field("ole_reference_count", &self.ole_reference_count)
+            .field(
+                "pre_fullscreen_window_placement",
+                &pre_fullscreen_window_placement,
+            )
+            .field(
+                "pre_parent_minimized_window_placement",
+                &pre_parent_minimized_window_placement,
+            )
+            .field("virtual_height", &self.virtual_height)
+            .field("virtual_width", &self.virtual_width)
+            .field("aspect_ratio", &self.aspect_ratio)
+            .field("is_visible", &self.is_visible)
+            .field("is_first_time_visible", &self.is_first_time_visible)
+            .field("initially_minimized", &self.initially_minimized)
+            .field("initially_maximized", &self.initially_maximized)
+            .field("dpi_scale_factor", &self.dpi_scale_factor)
+            .field("handle_manual_dpi_changes", &self.handle_manual_dpi_changes)
+            .field("window_definitions", &self.window_definitions)
+            .finish()
+    }
 }
 
 impl WindowsWindow {
@@ -93,6 +130,11 @@ impl WindowsWindow {
                 virtual_width: Cell::new(0),
                 aspect_ratio: Cell::new(1.0f32),
                 is_visible: Cell::new(false),
+                is_first_time_visible: Cell::new(true),
+                initially_minimized: Cell::new(false),
+                initially_maximized: Cell::new(false),
+                dpi_scale_factor: 1.0,
+                handle_manual_dpi_changes: false,
                 window_definitions: Rc::new(WindowDefinition::default()),
             }
         }
@@ -709,16 +751,47 @@ impl GenericWindow for WindowsWindow {
         if !self.is_visible.get() {
             self.is_visible.set(true);
 
+            // Should the show command include activation?
             // Do not activate windows that do not take input; e.g. tool-tips and cursor decorators
-            // Also dont activate if a window wants to appear but not activate itself
-            let should_activate =
-                windef_borrow.accepts_input && windef_borrow.activate_when_first_shown;
-            unsafe {
-                ShowWindow(
-                    self.hwnd.get(),
-                    if should_activate { SW_SHOW } else { SW_SHOWNA },
-                );
+            let mut should_activate = false;
+            if windef_borrow.accepts_input {
+                should_activate = windef_borrow.activation_policy == WindowActivationPolicy::Always;
+                if self.is_first_time_visible.get()
+                    && windef_borrow.activation_policy == WindowActivationPolicy::FirstShown
+                {
+                    should_activate = true;
+                }
             }
+            let mut show_window_cmd = if should_activate {
+                SW_SHOW
+            } else {
+                SW_SHOWNOACTIVATE
+            };
+            if self.is_first_time_visible.get() {
+                self.is_first_time_visible.set(false);
+                if self.initially_minimized.get() {
+                    show_window_cmd = if should_activate {
+                        SW_MINIMIZE
+                    } else {
+                        SW_SHOWMINNOACTIVE
+                    };
+                } else if self.initially_maximized.get() {
+                    show_window_cmd = if should_activate {
+                        SW_SHOWMAXIMIZED
+                    } else {
+                        SW_MAXIMIZE
+                    };
+                }
+            }
+            unsafe {
+                ShowWindow(self.hwnd.get(), show_window_cmd);
+            }
+            // Turns out SW_SHOWNA doesn't work correctly if the window has never been shown before.  If the window
+            // was already maximized, (and hidden) and we're showing it again, SW_SHOWNA would be right.  But it's not right
+            // to use SW_SHOWNA when the window has never been shown before!
+            //
+            // TODO Add in a more complicated path that involves SW_SHOWNA if we hide windows in their maximized/minimized state.
+            //::ShowWindow(HWnd, bShouldActivate ? SW_SHOW : SW_SHOWNA);
         }
     }
     fn hide(&self) {
@@ -726,6 +799,9 @@ impl GenericWindow for WindowsWindow {
             self.is_visible.set(false);
             unsafe { ShowWindow(self.hwnd.get(), SW_HIDE) };
         }
+    }
+    fn get_dpi_scale_factor(&self) -> f32 {
+        self.dpi_scale_factor
     }
     fn set_window_mode(&mut self, new_window_mode: WindowMode) {
         let windef_borrow: &WindowDefinition = Rc::borrow(&self.window_definitions);
@@ -976,6 +1052,37 @@ impl GenericWindow for WindowsWindow {
                 size.1 = client_rect.bottom - client_rect.top;
             }
         }
+    }
+    fn is_manual_manage_dpi_change(&self) -> bool {
+        self.handle_manual_dpi_changes
+    }
+    fn set_manual_manage_dpi_change(&mut self, manual_dpi_changes: bool) {
+        self.handle_manual_dpi_changes = manual_dpi_changes;
+    }
+    fn destroy(&mut self) {
+        unsafe {
+            if self.ole_reference_count > 0 && IsWindow(self.hwnd.get()).0 != 0 {
+                let res = RevokeDragDrop(self.hwnd.get());
+                if let Ok(()) = res {}
+            }
+            DestroyWindow(self.hwnd.get());
+        }
+    }
+
+    fn is_definition_valid(&self) -> bool {
+        todo!()
+    }
+
+    fn set_dpi_scale_factor(&mut self, factor: f32) {
+        todo!()
+    }
+
+    fn draw_attention(&self, parameters: crate::generic::window::WindowDrawAttentionRequestType) {
+        todo!()
+    }
+
+    fn set_native_window_buttons_visibility(&mut self, visible: bool) {
+        todo!()
     }
 }
 

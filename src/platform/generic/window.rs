@@ -12,6 +12,20 @@ pub enum WindowMode {
     Windowed,
 }
 
+#[derive(PartialEq, Copy, Clone, Debug)]
+pub enum WindowDrawAttentionRequestType {
+    /**
+     * Indicates that the attention-drawing behavior continues until the
+     * application or window is activated.
+     */
+    UntilActivated,
+
+    /**
+     * Indicates that the attention-drawing behavior, if any, should stop.
+     */
+    Stop,
+}
+
 pub trait GenericWindow {
     fn reshape_window(
         &self,
@@ -30,7 +44,7 @@ pub trait GenericWindow {
     fn move_window_to(&self, x: &mut i32, y: &mut i32);
     fn bring_to_front(&self, force: bool);
     //fn HACK_force_to_front(&mut self);
-    //fn destroy(&mut self);
+    fn destroy(&mut self);
     fn minimize(&self);
     fn maximize(&self);
     fn restore(&self);
@@ -59,5 +73,12 @@ pub trait GenericWindow {
     fn is_fullscreen_supported(&self) -> bool;
     fn set_text(&self, text: Vec<u16>);
     fn get_definition(&self) -> Rc<WindowDefinition>;
+    fn is_definition_valid(&self) -> bool;
     fn adjust_cached_size(&self, size: &mut (i32, i32));
+    fn get_dpi_scale_factor(&self) -> f32;
+    fn set_dpi_scale_factor(&mut self, factor: f32);
+    fn is_manual_manage_dpi_change(&self) -> bool;
+    fn set_manual_manage_dpi_change(&mut self, auto_handle: bool);
+    fn draw_attention(&self, parameters: WindowDrawAttentionRequestType);
+    fn set_native_window_buttons_visibility(&mut self, visible: bool);
 }

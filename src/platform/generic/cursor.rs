@@ -1,6 +1,8 @@
-use crate::core::math::{color::Color, int_rect::IntRect};
+use crate::core::math::color::Color;
 use cgmath::Vector2;
-use std::path::Path;
+use std::{ffi::c_void, path::Path};
+
+pub trait TagRect {}
 
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub enum MouseCursor {
@@ -93,6 +95,7 @@ impl MouseCursor {
 }
 
 pub trait ICursor {
+    type Rect: TagRect;
     /** Creates a hardware cursor from file. Can return None when not available. */
     fn create_cursor_from_file<P: AsRef<Path>>(
         path_to_cursor_without_extension: P,
@@ -141,10 +144,10 @@ pub trait ICursor {
      *
      * @param bounds	The bounds to lock the cursor to.  Pass None to unlock.
      */
-    fn lock<R: Into<IntRect>>(&self, bounds: *const R);
+    fn lock(&self, bounds: *const Self::Rect);
 
-    /*/**
+    /**
      * Allows overriding the shape of a particular cursor.
      */
-    virtual void SetTypeShape(EMouseCursor::Type InCursorType, void* CursorHandle) = 0;*/
+    fn set_type_shape(&self, cursor_type: MouseCursor, cursor_handle: *const c_void);
 }

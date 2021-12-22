@@ -29,6 +29,19 @@ pub enum WindowTransparency {
     PerPixel = 2,
 }
 
+/** Enumeration to specify whether the window gets activated upon showing it */
+#[derive(PartialEq, Clone, Debug)]
+pub enum WindowActivationPolicy {
+    /** Value indicating that a window never activates when it is shown */
+    Never,
+
+    /** Value indicating that a window always activates when it is shown */
+    Always,
+
+    /** Value indicating that a window only activates when it is first shown */
+    FirstShown,
+}
+
 #[derive(PartialEq, Clone, Debug)]
 pub struct WindowDefinition {
     /** Window type */
@@ -55,8 +68,8 @@ pub struct WindowDefinition {
     pub is_topmost_window: bool,
     /** true if the window accepts input; false if the window is non-interactive */
     pub accepts_input: bool,
-    /** true if this window will be activated when it is first shown */
-    pub activate_when_first_shown: bool,
+    /** the policy for activating the window upon each show */
+    pub activation_policy: WindowActivationPolicy,
     /** true if this window will be focused when it is first shown */
     pub focus_when_first_shown: bool,
     /** true if this window displays an enabled close button on the toolbar area */
@@ -89,6 +102,9 @@ pub struct WindowDefinition {
     pub corner_radius: i32,
 
     pub size_limits: WindowSizeLimits,
+
+    /** false if the window should respond to system DPI changes, otherwise this will be handled, internally, by the application */
+    pub manual_dpi: bool,
 }
 
 impl default::Default for WindowDefinition {
@@ -104,7 +120,7 @@ impl default::Default for WindowDefinition {
             appears_in_taskbar: true,
             is_topmost_window: true,
             accepts_input: true,
-            activate_when_first_shown: true,
+            activation_policy: WindowActivationPolicy::Always,
             focus_when_first_shown: true,
             has_close_button: true,
             supports_minimize: true,
@@ -125,6 +141,7 @@ impl default::Default for WindowDefinition {
                 max_width: Some(1366.0),
                 max_height: Some(705.0),
             },
+            manual_dpi: false,
         }
     }
 }

@@ -1,6 +1,6 @@
 use crate::{
     core::math::color::Color,
-    generic::cursor::{ICursor, MouseCursor},
+    generic::cursor::{ICursor, MouseCursor, TagRect},
     platform::windows::utils::ToWide,
 };
 use cgmath::Vector2;
@@ -15,8 +15,9 @@ use windows::Win32::{
 };
 
 type FloatVec2 = Vector2<f32>;
+impl TagRect for RECT {}
 
-#[derive(PartialEq, Default, Debug)]
+#[derive(PartialEq, Debug)]
 pub struct WindowsCursor {
     pub current_type: MouseCursor,
     pub cursor_handles: [HCURSOR; 15],
@@ -25,10 +26,10 @@ pub struct WindowsCursor {
 
 impl WindowsCursor {
     pub fn new() -> WindowsCursor {
+        let mut cursor_handles = [0; 15];
+        let mut cursor_override_handles = [0; 15];
         unsafe {
-            let mut windows_cursor = WindowsCursor::default();
             for i in 0..15 {
-                windows_cursor.cursor_handles[i] = 0;
                 let mut cursor_handle: HCURSOR = 0;
                 match MouseCursor::from_usize(i) {
                     MouseCursor::None | MouseCursor::Custom => {}
@@ -81,10 +82,13 @@ impl WindowsCursor {
                         cursor_handle = LoadCursorFromFileW(PWSTR(r"F:\Programs\Epic Games\4.14\Engine\Content\Editor\Slate\Cursor\eyedropper.cur".to_wide_null().as_mut_ptr()));
                     }
                 }
-                windows_cursor.cursor_handles[i] = cursor_handle;
+                cursor_handles[i] = cursor_handle;
             }
-            windows_cursor.set_type(MouseCursor::Default);
-            windows_cursor
+        }
+        WindowsCursor {
+            current_type: MouseCursor::Default,
+            cursor_handles,
+            cursor_override_handles,
         }
     }
     pub fn set_custom_shape(&mut self, cursor_handle: HCURSOR) {
@@ -94,6 +98,7 @@ impl WindowsCursor {
 }
 
 impl ICursor for WindowsCursor {
+    type Rect = RECT;
     fn create_cursor_from_file<P: AsRef<Path>>(
         path_to_cursor_without_extension: P,
         hotspot: Vector2<f32>,
@@ -127,7 +132,11 @@ impl ICursor for WindowsCursor {
     fn set_type(&mut self, new_cursor: MouseCursor) {
         self.current_type = new_cursor;
         unsafe {
-            SetCursor(self.cursor_handles[new_cursor as usize]);
+            if self.cursor_override_handles[new_cursor as usize] != 0 {
+                SetCursor(self.cursor_override_handles[new_cursor as usize]);
+            } else {
+                SetCursor(self.cursor_handles[new_cursor as usize]);
+            }
         }
     }
     fn get_type<'a>(&'a self) -> &'a MouseCursor {
@@ -149,9 +158,18 @@ impl ICursor for WindowsCursor {
             }
         }
     }
-    fn lock(&self, bounds: *const RECT) {
+    fn lock(&self, bounds: *const Self::Rect) {
         unsafe {
+            // Lock/Unlock the cursor
             ClipCursor(bounds);
+            // If the cursor is not visible and we're running game, assume we're in a mode where the mouse is controlling the camera and lock it to the center of the widget.
+        }
+    }
+    fn set_type_shape(&self, cursor_type: MouseCursor, in_cursor_handle: *const std::ffi::c_void) {
+        let cursor_handle = in_cursor_handle as HCURSOR;
+        self.cursor_override_handles[cursor_type as usize] = cursor_handle;
+        if self.current_type == cursor_type {
+            self.set_type(self.current_type);
         }
     }
 }
