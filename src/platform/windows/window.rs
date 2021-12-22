@@ -149,7 +149,7 @@ impl WindowsWindow {
     }
     pub fn initialize(
         &mut self,
-        in_windows_application: &Arc<WindowsApplication>,
+        in_windows_application: &WindowsApplication,
         in_definition: WindowDefinition,
         instance: HINSTANCE,
         parent: Option<Rc<WindowsWindow>>,
@@ -158,7 +158,7 @@ impl WindowsWindow {
         println!("Just reach in initialize");
 
         self.definition = in_definition;
-        self.owning_application = Arc::<WindowsApplication>::downgrade(&in_windows_application);
+        self.owning_application = unsafe { Weak::from_raw(&*in_windows_application) };
 
         let mut window_ex_style: u32 = 0;
         let mut window_style: u32 = 0;
@@ -178,7 +178,7 @@ impl WindowsWindow {
         let mut window_width = client_width;
         let mut window_height = client_height;
 
-        let application_supports_per_pixel_blending = self.owning_application.get_window_transparency_support() == WindowTransparency::PerPixel;
+        let application_supports_per_pixel_blending = in_windows_application.get_window_transparency_support() == WindowTransparency::PerPixel;
 
         if !self.definition.has_os_window_border {
             window_ex_style = WS_EX_WINDOWEDGE;

@@ -413,7 +413,7 @@ impl WindowsApplication {
         };
         self.windows.push(window);
         let idx = self.windows.len() - 1;
-        Rc::make_mut(&mut self.windows[idx]).initialize(
+        Rc::make_mut(&mut self.windows[idx]).initialize(&self,
             in_definition,
             self.instance_handle,
             parent_window,
@@ -973,8 +973,7 @@ impl WindowsApplication {
         lparam: LPARAM,
     ) -> LRESULT {
         unsafe {
-            Arc::make_mut(&mut WINDOWS_APPLICATION.unwrap())
-                .process_message(hwnd, msg, wparam, lparam) as isize
+            Self::process_message(hwnd, msg, wparam, lparam) as isize
         }
     }
     pub fn pump_messages(&self, time_delta: f32) {
