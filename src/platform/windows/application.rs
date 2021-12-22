@@ -67,8 +67,8 @@ use windows::Win32::{
                 IMR_RECONVERTSTRING,
             },
             KeyboardAndMouse::{
-                GetCapture, SetCapture, VK_CAPITAL, VK_F4, VK_LCONTROL, VK_LMENU, VK_LSHIFT,
-                VK_RCONTROL, VK_RMENU, VK_RSHIFT, VK_SPACE,
+                GetAsyncKeyState, GetCapture, GetKeyState, SetCapture, VK_CAPITAL, VK_F4,
+                VK_LCONTROL, VK_LMENU, VK_LSHIFT, VK_RCONTROL, VK_RMENU, VK_RSHIFT, VK_SPACE,
             },
             RegisterRawInputDevices, HRAWINPUT, RAWINPUT, RAWINPUTDEVICE, RAWINPUTDEVICELIST,
             RAWINPUTHEADER, RIDEV_REMOVE, RIDI_DEVICENAME, RID_INPUT, RIM_TYPEMOUSE,
@@ -303,13 +303,14 @@ pub fn create_windows_application(
 }
 
 unsafe fn init_windows_application(hinstance: HINSTANCE, hicon: HICON) {
-    let mut app = utils::leak(Arc::new(WindowsApplication::new(hinstance, hicon)));
+    let windows_application = WindowsApplication::new(hinstance, hicon);
+    let mut app = utils::leak(Arc::new(windows_application));
     println!("app address is {:p}", &app);
     WINDOWS_APPLICATION = Some(app);
 }
 
 //TODO implement GenericApplication trait. Also most likely trait based on IForceFeedbackSystem.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct WindowsApplication {
     cursor: Rc<WindowsCursor>,
     minimized_window_position: IntPoint2,
@@ -317,8 +318,8 @@ pub struct WindowsApplication {
     using_high_precision_mouse_input: bool,
     is_mouse_attached: bool,
     force_activate_by_mouse: bool,
-    pub windows: RefCell<Vec<Rc<RefCell<WindowsWindow>>>>,
-    //modifier_key_state: [bool; ModifierKey::Count as usize],
+    pub windows: Vec<Rc<WindowsWindow>>,
+    modifier_key_state: [bool; ModifierKey::Count as usize],
     in_modal_size_loop: bool,
     pub display_metrics: DisplayMetrics,
     //startup_sticky_keys: STICKYKEYS,
@@ -376,46 +377,44 @@ impl WindowsApplication {
             using_high_precision_mouse_input: false,
             is_mouse_attached: false,
             force_activate_by_mouse: false,
-            windows: RefCell::new(vec![]),
-            //modifier_key_state: unsafe { mem::zeroed() },
+            windows: vec![],
+            modifier_key_state: [false; ModifierKey::Count as usize],
             in_modal_size_loop: false,
             display_metrics: display_metrics,
             //startup_sticky_keys: STICKYKEYS,
             //startup_toggle_keys: TOGGLEKEYS,
             //startup_filter_keys: FILTERKEYS,
         };
-        println!("Successed created winapp");
+        println!("Successfully created winapp");
         let class_registered = winapp.register_class(hinstance, hicon);
         println!("Have we registered class? {}", class_registered);
         winapp.query_connected_mice();
         println!("winapp debug is {:#?}", winapp);
         winapp
     }
-    pub fn make_window(&self) -> Rc<RefCell<WindowsWindow>> {
+    pub fn make_window(&self) -> Rc<WindowsWindow> {
         WindowsWindow::make()
     }
     pub fn initialize_window(
-        &self,
-        window: &Rc<RefCell<WindowsWindow>>,
-        definition: &Rc<WindowDefinition>,
-        parent: Option<Rc<WindowsWindow>>,
+        &mut self,
+        in_window: &Rc<WindowsWindow>,
+        in_definition: WindowDefinition,
+        in_parent_window: &Option<Rc<WindowsWindow>>,
         show_immediately: bool,
     ) {
         println!("about to push on dat windows. Mutable borrow here.");
-        self.windows.borrow_mut().push(window.clone());
-        println!("window strong count is {}", Rc::strong_count(&window));
-        println!("window weak count is {}", Rc::weak_count(&window));
-        println!(
-            "definition strong count is {}",
-            Rc::strong_count(&definition)
-        );
-        println!("definition weak count is {}", Rc::weak_count(&definition));
-        println!("about to initialize the window. Immutable borrow here.");
-        let borrowed_window: &RefCell<WindowsWindow> = Rc::borrow(&window);
-        borrowed_window.borrow_mut().initialize(
-            definition,
+        let window = in_window.clone();
+        let parent_window = if let Some(parent) = in_parent_window {
+            Some(parent.clone())
+        } else {
+            None
+        };
+        self.windows.push(window);
+        let idx = self.windows.len() - 1;
+        Rc::make_mut(&mut self.windows[idx]).initialize(
+            in_definition,
             self.instance_handle,
-            parent,
+            parent_window,
             show_immediately,
         );
     }
@@ -472,36 +471,34 @@ impl WindowsApplication {
     //TODO the return signature for this method feels wrong.
     pub fn find_window_by_hwnd(
         &self,
-        /*windows_to_search: &Vec<Rc<RefCell<WindowsWindow>>>,*/ handle_to_find: HWND,
-    ) -> Option<Rc<RefCell<WindowsWindow>>> {
+        windows_to_search: &Vec<Rc<WindowsWindow>>,
+        handle_to_find: HWND,
+    ) -> Option<Rc<WindowsWindow>> {
         println!(
             "Inside find_window_by_hwnd, handle_to_find is {:?}",
             handle_to_find
         );
-        let len = self.windows.borrow().len();
+        let len = windows_to_search.len();
         let mut n = 0;
         loop {
             if n == len {
                 break;
             }
-            let borrowed_window = &self.windows.borrow()[n];
-            //println!("self.windows.borrow()[{}] is {:p} and {:#?}", n, borrowed_window, borrowed_window);
-            //println!("borrowed_window.get_hwnd() is {:p}", borrowed_window.borrow().get_hwnd());
-            let borrowed_window_borrow: &RefCell<WindowsWindow> = Rc::borrow(&borrowed_window);
-            if borrowed_window_borrow.borrow().get_hwnd() == handle_to_find {
-                return Some(borrowed_window.clone());
+            let window = &windows_to_search[n];
+            if window.get_hwnd() == handle_to_find {
+                return Some(window.clone());
             }
             n += 1;
         }
         None
     }
-    pub fn is_cursor_directly_over_window(&self) -> bool {
+    pub fn is_cursor_directly_over_seraph_window(&self) -> bool {
         unsafe {
             let mut cursor_pos = POINT::default();
             let got_point = GetCursorPos(&mut cursor_pos);
             if got_point.0 != 0 {
                 let hwnd: HWND = WindowFromPoint(cursor_pos);
-                let window_under_cursor = self.find_window_by_hwnd(hwnd);
+                let window_under_cursor = self.find_window_by_hwnd(&self.windows, hwnd);
                 return window_under_cursor.is_some();
             }
         }
@@ -575,23 +572,23 @@ impl WindowsApplication {
             work_area
         }
     }
-    pub fn process_message(&self, hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> i32 {
+    pub fn process_message(&mut self, hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> i32 {
         println!("Reached inside process_message");
         unsafe {
             println!("hwnd is {:?}", hwnd);
             println!("WindowsApplication self address is {:p}", self);
             println!(
-                "self.windows.borrow().len() is {}. about to find window by hwnd.",
-                self.windows.borrow().len()
+                "self.windows.len() is {}. about to find window by hwnd.",
+                self.windows.len()
             );
-            let mut current_native_event_window_opt = self.find_window_by_hwnd(hwnd);
+            let current_native_event_window_opt = self.find_window_by_hwnd(&self.windows, hwnd);
 
-            if self.windows.borrow().len() != 0 && current_native_event_window_opt.is_some() {
+            if self.windows.len() != 0 && current_native_event_window_opt.is_some() {
                 println!(
                     "current_native_event_window_opt is some. Don't believe me? Look! {:#?}",
                     current_native_event_window_opt
                 );
-                let mut current_native_event_window = current_native_event_window_opt.unwrap();
+                let current_native_event_window = current_native_event_window_opt.unwrap();
 
                 match msg {
                     WM_GETMINMAXINFO => {
@@ -599,10 +596,7 @@ impl WindowsApplication {
                             let mmi = mem::transmute::<LPARAM, *const MINMAXINFO>(lparam);
                             *mmi
                         };
-                        let borrowed_window: &RefCell<WindowsWindow> =
-                            Rc::borrow(&current_native_event_window);
-                        let borrowed_window_borrow = borrowed_window.borrow();
-                        let windef = borrowed_window_borrow.get_definition();
+                        let windef = current_native_event_window.get_definition();
                         let ref size_limits: WindowSizeLimits = windef.size_limits;
 
                         // We need to inflate the max values if using an OS window border
@@ -709,10 +703,7 @@ impl WindowsApplication {
                         }
                     }
                     WM_NCCALCSIZE => {
-                        let borrowed_window: &RefCell<WindowsWindow> =
-                            Rc::borrow(&current_native_event_window);
-                        let borrowed_window_borrow = borrowed_window.borrow();
-                        let windef = borrowed_window_borrow.get_definition();
+                        let windef = current_native_event_window.get_definition();
                         // Let windows absorb this message if using the standard border
                         if wparam != 0 && !windef.has_os_window_border {
                             // Borderless game windows are not actually borderless, they have a thick border that we simply draw game content over (client
@@ -721,7 +712,7 @@ impl WindowsApplication {
                             // window rect (including the border) sits inside the monitor. The size adjustments here will be sent to WM_MOVE and
                             // WM_SIZE and the window will still be considered maximized.
                             if windef.window_type == WindowType::GameWindow
-                                && borrowed_window.borrow().is_maximized()
+                                && current_native_event_window.is_maximized()
                             {
                                 // Ask the system for the window border size as this is the amount that Windows will bleed our window over the edge
                                 // of our desired space. The value returned by current_native_event_window will be incorrect for our usage here as it
@@ -768,10 +759,7 @@ impl WindowsApplication {
                         }
                     }
                     WM_SIZING => {
-                        let borrowed_window: &RefCell<WindowsWindow> =
-                            Rc::borrow(&current_native_event_window);
-                        let borrowed_window_borrow = borrowed_window.borrow();
-                        let windef = borrowed_window_borrow.get_definition();
+                        let windef = current_native_event_window.get_definition();
                         if windef.should_preserve_aspect_ratio {
                             // The rect we get in lparam is window rect, but we need to preserve client's aspect ratio,
                             // so we need to find what the border and title bar sizes are, if window has them and adjust the rect.
@@ -797,7 +785,7 @@ impl WindowsApplication {
                             rect.top -= test_rect.top;
                             rect.bottom -= test_rect.bottom;
 
-                            let aspect_ratio = borrowed_window.borrow().get_aspect_ratio();
+                            let aspect_ratio = current_native_event_window.get_aspect_ratio();
                             let new_width = rect.right - rect.left;
                             let new_height = rect.bottom - rect.top;
 
@@ -843,7 +831,6 @@ impl WindowsApplication {
                     WM_DESTROY => {
                         println!("about to delete references to windows after WM_DESTROY. Mutable borrow here.");
                         self.windows
-                            .borrow_mut()
                             .retain(|ref x| Rc::ptr_eq(*x, &current_native_event_window) == false);
                         return 0;
                     }
@@ -939,7 +926,7 @@ impl WindowsApplication {
                     continue;
                 }
 
-                let mut name_str = String::from_utf8(name).unwrap();
+                let name_str = String::from_utf8(name).unwrap();
                 let replacement = name_str.replace("#", "\\");
                 /*
                  * Name XP starts with \??\, vista+ starts \\?\
@@ -958,17 +945,24 @@ impl WindowsApplication {
             self.is_mouse_attached = mouse_count > 0;
         }
     }
-    /*fn update_all_modifier_key_states(&mut self) {
+    fn update_all_modifier_key_states(&mut self) {
         unsafe {
-            self.modifier_key_state[ModifierKey::LeftShift as usize]       = (GetAsyncKeyState(VK_LSHIFT) & 0x8000) != 0;
-            self.modifier_key_state[ModifierKey::RightShift as usize]      = (GetAsyncKeyState(VK_RSHIFT) & 0x8000) != 0;
-            self.modifier_key_state[ModifierKey::LeftControl as usize]     = (GetAsyncKeyState(VK_LCONTROL) & 0x8000) != 0;
-            self.modifier_key_state[ModifierKey::RightControl as usize]    = (GetAsyncKeyState(VK_RCONTROL) & 0x8000) != 0;
-            self.modifier_key_state[ModifierKey::LeftAlt as usize]         = (GetAsyncKeyState(VK_LMENU) & 0x8000) != 0;
-            self.modifier_key_state[ModifierKey::RightAlt as usize]        = (GetAsyncKeyState(VK_RMENU) & 0x8000) != 0;
-            self.modifier_key_state[ModifierKey::CapsLock as usize]        = (GetKeyState(VK_CAPITAL) & 0x0001) != 0;
+            self.modifier_key_state[ModifierKey::LeftShift as usize] =
+                (GetAsyncKeyState(VK_LSHIFT.into()) & 0x8000) != 0;
+            self.modifier_key_state[ModifierKey::RightShift as usize] =
+                (GetAsyncKeyState(VK_RSHIFT.into()) & 0x8000) != 0;
+            self.modifier_key_state[ModifierKey::LeftControl as usize] =
+                (GetAsyncKeyState(VK_LCONTROL.into()) & 0x8000) != 0;
+            self.modifier_key_state[ModifierKey::RightControl as usize] =
+                (GetAsyncKeyState(VK_RCONTROL.into()) & 0x8000) != 0;
+            self.modifier_key_state[ModifierKey::LeftAlt as usize] =
+                (GetAsyncKeyState(VK_LMENU.into()) & 0x8000) != 0;
+            self.modifier_key_state[ModifierKey::RightAlt as usize] =
+                (GetAsyncKeyState(VK_RMENU.into()) & 0x8000) != 0;
+            self.modifier_key_state[ModifierKey::CapsLock as usize] =
+                (GetKeyState(VK_CAPITAL.into()) & 0x0001) != 0;
         }
-    }*/
+    }
     // Defined as a global so that it can be extern'd by UELibrary
     fn windows_application_wnd_proc(
         hwnd: HWND,
@@ -977,8 +971,7 @@ impl WindowsApplication {
         lparam: LPARAM,
     ) -> LRESULT {
         unsafe {
-            WINDOWS_APPLICATION
-                .unwrap()
+            Arc::make_mut(&mut WINDOWS_APPLICATION.unwrap())
                 .process_message(hwnd, msg, wparam, lparam) as isize
         }
     }
@@ -1013,7 +1006,7 @@ impl WindowsApplication {
     }
     fn defer_message(
         &self,
-        native_window: &Rc<RefCell<WindowsWindow>>,
+        native_window: &Rc<WindowsWindow>,
         in_hwnd: HWND,
         in_message: u32,
         in_wparam: WPARAM,

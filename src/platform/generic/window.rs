@@ -72,7 +72,7 @@ pub trait GenericWindow {
     fn is_foreground_window(&self) -> bool;
     fn is_fullscreen_supported(&self) -> bool;
     fn set_text(&self, text: &mut Vec<u16>);
-    fn get_definition(&self) -> &Rc<WindowDefinition>;
+    fn get_definition(&self) -> &WindowDefinition;
     fn is_definition_valid(&self) -> bool;
     fn adjust_cached_size(&self, size: &mut (i32, i32));
     fn get_dpi_scale_factor(&self) -> f32;
