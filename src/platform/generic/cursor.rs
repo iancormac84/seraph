@@ -149,5 +149,5 @@ pub trait ICursor {
     /**
      * Allows overriding the shape of a particular cursor.
      */
-    fn set_type_shape(&self, cursor_type: MouseCursor, cursor_handle: *const c_void);
+    fn set_type_shape(&mut self, cursor_type: MouseCursor, cursor_handle: *const c_void);
 }

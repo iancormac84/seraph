@@ -18,6 +18,7 @@ use std::borrow::Borrow;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::io::Error;
+use std::mem::MaybeUninit;
 use std::os::raw::c_void;
 use std::rc::{Rc, Weak};
 use std::sync::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
@@ -410,9 +411,13 @@ impl WindowsApplication {
         );
         println!("definition weak count is {}", Rc::weak_count(&definition));
         println!("about to initialize the window. Immutable borrow here.");
-        window
-            .borrow()
-            .initialize(definition, self.instance_handle, parent, show_immediately);
+        let borrowed_window: &RefCell<WindowsWindow> = Rc::borrow(&window);
+        borrowed_window.borrow_mut().initialize(
+            definition,
+            self.instance_handle,
+            parent,
+            show_immediately,
+        );
     }
     fn register_class(&self, hinstance: HINSTANCE, hicon: HICON) -> bool {
         unsafe {
@@ -482,7 +487,8 @@ impl WindowsApplication {
             let borrowed_window = &self.windows.borrow()[n];
             //println!("self.windows.borrow()[{}] is {:p} and {:#?}", n, borrowed_window, borrowed_window);
             //println!("borrowed_window.get_hwnd() is {:p}", borrowed_window.borrow().get_hwnd());
-            if borrowed_window.borrow().get_hwnd() == handle_to_find {
+            let borrowed_window_borrow: &RefCell<WindowsWindow> = Rc::borrow(&borrowed_window);
+            if borrowed_window_borrow.borrow().get_hwnd() == handle_to_find {
                 return Some(borrowed_window.clone());
             }
             n += 1;
@@ -593,8 +599,10 @@ impl WindowsApplication {
                             let mmi = mem::transmute::<LPARAM, *const MINMAXINFO>(lparam);
                             *mmi
                         };
-                        let windef: &WindowDefinition =
-                            Rc::borrow(&current_native_event_window.get_definition());
+                        let borrowed_window: &RefCell<WindowsWindow> =
+                            Rc::borrow(&current_native_event_window);
+                        let borrowed_window_borrow = borrowed_window.borrow();
+                        let windef = borrowed_window_borrow.get_definition();
                         let ref size_limits: WindowSizeLimits = windef.size_limits;
 
                         // We need to inflate the max values if using an OS window border
@@ -701,16 +709,19 @@ impl WindowsApplication {
                         }
                     }
                     WM_NCCALCSIZE => {
-                        let windef = current_native_event_window.borrow().get_definition();
+                        let borrowed_window: &RefCell<WindowsWindow> =
+                            Rc::borrow(&current_native_event_window);
+                        let borrowed_window_borrow = borrowed_window.borrow();
+                        let windef = borrowed_window_borrow.get_definition();
                         // Let windows absorb this message if using the standard border
-                        if wparam != 0 && !windef.borrow().has_os_window_border {
+                        if wparam != 0 && !windef.has_os_window_border {
                             // Borderless game windows are not actually borderless, they have a thick border that we simply draw game content over (client
                             // rect contains the window border). When maximized Windows will bleed our border over the edges of the monitor. So that we
                             // don't draw content we are going to later discard, we change a maximized window's size and position so that the entire
                             // window rect (including the border) sits inside the monitor. The size adjustments here will be sent to WM_MOVE and
                             // WM_SIZE and the window will still be considered maximized.
-                            if windef.borrow().window_type == WindowType::GameWindow
-                                && current_native_event_window.borrow().is_maximized()
+                            if windef.window_type == WindowType::GameWindow
+                                && borrowed_window.borrow().is_maximized()
                             {
                                 // Ask the system for the window border size as this is the amount that Windows will bleed our window over the edge
                                 // of our desired space. The value returned by current_native_event_window will be incorrect for our usage here as it
@@ -721,7 +732,7 @@ impl WindowsApplication {
 
                                 // A pointer to the window size data that Windows will use is passed to us in lparam
                                 let resizing_rects: &mut NCCALCSIZE_PARAMS =
-                                    lparam as usize as *mut _ as &mut _;
+                                    &mut *(lparam as usize as *mut NCCALCSIZE_PARAMS) as &mut _;
 
                                 // The first rectangle contains the client rectangle of the resized window.
                                 // Decrease window size on all sides by the border size.
@@ -757,8 +768,11 @@ impl WindowsApplication {
                         }
                     }
                     WM_SIZING => {
-                        let windef = current_native_event_window.borrow().get_definition();
-                        if windef.borrow().should_preserve_aspect_ratio {
+                        let borrowed_window: &RefCell<WindowsWindow> =
+                            Rc::borrow(&current_native_event_window);
+                        let borrowed_window_borrow = borrowed_window.borrow();
+                        let windef = borrowed_window_borrow.get_definition();
+                        if windef.should_preserve_aspect_ratio {
                             // The rect we get in lparam is window rect, but we need to preserve client's aspect ratio,
                             // so we need to find what the border and title bar sizes are, if window has them and adjust the rect.
                             let mut window_info: WINDOWINFO = mem::zeroed();
@@ -783,8 +797,7 @@ impl WindowsApplication {
                             rect.top -= test_rect.top;
                             rect.bottom -= test_rect.bottom;
 
-                            let aspect_ratio =
-                                current_native_event_window.borrow().get_aspect_ratio();
+                            let aspect_ratio = borrowed_window.borrow().get_aspect_ratio();
                             let new_width = rect.right - rect.left;
                             let new_height = rect.bottom - rect.top;
 
@@ -987,6 +1000,18 @@ impl WindowsApplication {
             .unwrap()
             .process_message(hwnd, msg, wparam, lparam) as isize
     }
+    fn defer_message(
+        &self,
+        native_window: &Rc<RefCell<WindowsWindow>>,
+        in_hwnd: HWND,
+        in_message: u32,
+        in_wparam: WPARAM,
+        in_lparam: LPARAM,
+        mouse_x: i32,
+        mouse_y: i32,
+        raw_input_flags: u32,
+    ) {
+    }
 }
 
 fn get_monitor_size_from_edid(
@@ -1066,7 +1091,7 @@ fn get_size_for_dev_id(target_dev_id: &String, width: &mut i32, height: &mut i32
 
                         if h_dev_reg_key != 0 && h_dev_reg_key != INVALID_HANDLE_VALUE.0 {
                             res = get_monitor_size_from_edid(
-                                RegKey::predef(h_dev_reg_key),
+                                RegKey::predef(h_dev_reg_key as *mut _),
                                 width,
                                 height,
                             );
@@ -1120,7 +1145,7 @@ fn get_monitor_info(out_monitor_info: &mut Vec<MonitorInfo>) {
                     if (monitor.StateFlags & DISPLAY_DEVICE_ACTIVE != 0)
                         && (monitor.StateFlags & DISPLAY_DEVICE_MIRRORING_DRIVER == 0)
                     {
-                        let mut info: MonitorInfo = mem::zeroed();
+                        let mut info = MonitorInfo::default();
 
                         let temp_str = String::from_utf16_lossy(&monitor.DeviceID[..]);
                         let idx = &temp_str[9..].find("\\").unwrap();
@@ -1160,7 +1185,7 @@ fn get_monitor_info(out_monitor_info: &mut Vec<MonitorInfo>) {
 }
 
 //TODO this struct has cross-platform applications, so it shouldn't be implemented within the Windows-specific files.
-#[derive(PartialEq, Debug, Clone)]
+#[derive(PartialEq, Debug, Clone, Default)]
 pub struct DisplayMetrics {
     primary_display_width: i32,
     primary_display_height: i32,
@@ -1176,7 +1201,7 @@ pub struct DisplayMetrics {
 impl DisplayMetrics {
     pub fn new() -> DisplayMetrics {
         unsafe {
-            let mut out_display_metrics: DisplayMetrics = mem::zeroed();
+            let mut out_display_metrics = DisplayMetrics::default();
             // Total screen size of the primary monitor
             out_display_metrics.primary_display_width = GetSystemMetrics(SM_CXSCREEN);
             out_display_metrics.primary_display_height = GetSystemMetrics(SM_CYSCREEN);

@@ -165,7 +165,11 @@ impl ICursor for WindowsCursor {
             // If the cursor is not visible and we're running game, assume we're in a mode where the mouse is controlling the camera and lock it to the center of the widget.
         }
     }
-    fn set_type_shape(&self, cursor_type: MouseCursor, in_cursor_handle: *const std::ffi::c_void) {
+    fn set_type_shape(
+        &mut self,
+        cursor_type: MouseCursor,
+        in_cursor_handle: *const std::ffi::c_void,
+    ) {
         let cursor_handle = in_cursor_handle as HCURSOR;
         self.cursor_override_handles[cursor_type as usize] = cursor_handle;
         if self.current_type == cursor_type {

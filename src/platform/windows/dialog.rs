@@ -47,15 +47,12 @@ pub fn message_box(
 ) -> io::Result<MessageBoxResult> {
     unsafe {
         let wnd = wnd.unwrap_or(0);
-        let text = text.to_wide_null();
+        let mut text = text.to_wide_null();
         let text = text.as_mut_ptr();
         let caption = caption.map(|v| v.to_wide_null());
-        let caption = caption
-            .as_ref()
-            .map(|v| v.as_mut_ptr())
-            .unwrap_or(ptr::null_mut());
+        let caption = caption.as_ref().map(|v| v.as_ptr()).unwrap_or(ptr::null());
         let type_ = type_.unwrap_or(0);
-        match MessageBoxW(wnd, PWSTR(text), PWSTR(caption), type_) {
+        match MessageBoxW(wnd, PWSTR(text), PWSTR(caption as *mut u16), type_) {
             0 => Err(io::Error::last_os_error()),
             v => Ok(MessageBoxResult::try_from(v)?),
         }

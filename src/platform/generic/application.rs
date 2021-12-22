@@ -52,7 +52,7 @@ pub struct PlatformRect {
     pub bottom: i32,
 }
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(PartialEq, Debug, Clone, Default)]
 pub struct MonitorInfo {
     pub name: String,
     pub id: String,

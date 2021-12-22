@@ -1,4 +1,4 @@
-use crate::generic::window::{GenericWindow, WindowMode};
+use crate::generic::window::{GenericWindow, WindowDrawAttentionRequestType, WindowMode};
 use crate::generic::window_definition::{
     WindowActivationPolicy, WindowDefinition, WindowTransparency, WindowType,
 };
@@ -13,6 +13,9 @@ use std::{
     ptr,
     rc::Rc,
     sync::{Arc, Weak},
+};
+use windows::Win32::UI::WindowsAndMessaging::{
+    FlashWindowEx, FLASHWINFO, FLASHW_STOP, FLASHW_TIMERNOFG, FLASHW_TRAY,
 };
 use windows::Win32::{
     Foundation::{BOOL, HINSTANCE, HWND, PWSTR, RECT},
@@ -34,7 +37,7 @@ use windows::Win32::{
             EnableWindow, GetFocus, IsWindowEnabled, SetActiveWindow, SetFocus,
         },
         WindowsAndMessaging::{
-            AdjustWindowRectEx, CreateWindowExW, GetClientRect, GetForegroundWindow,
+            AdjustWindowRectEx, CreateWindowExW, DestroyWindow, GetClientRect, GetForegroundWindow,
             GetSystemMetrics, GetWindowInfo, GetWindowLongW, GetWindowPlacement, GetWindowRect,
             IsIconic, IsWindow, IsZoomed, SetLayeredWindowAttributes, SetWindowLongW,
             SetWindowPlacement, SetWindowPos, SetWindowTextW, ShowWindow, GWL_EXSTYLE, GWL_STYLE,
@@ -144,7 +147,7 @@ impl WindowsWindow {
         Rc::new(RefCell::new(WindowsWindow::new()))
     }
     pub fn initialize(
-        &self,
+        &mut self,
         definition: &Rc<WindowDefinition>,
         instance: HINSTANCE,
         parent: Option<Rc<WindowsWindow>>,
@@ -1028,14 +1031,14 @@ impl GenericWindow for WindowsWindow {
     fn is_fullscreen_supported(&self) -> bool {
         unsafe { GetSystemMetrics(SM_REMOTESESSION) != 0 }
     }
-    fn set_text(&self, text: Vec<u16>) {
+    fn set_text(&self, text: &mut Vec<u16>) {
         //TODO: genericize the text variable
         unsafe {
             SetWindowTextW(self.hwnd.get(), PWSTR(text.as_mut_ptr()));
         }
     }
-    fn get_definition(&self) -> Rc<WindowDefinition> {
-        self.window_definitions
+    fn get_definition(&self) -> &Rc<WindowDefinition> {
+        &self.window_definitions
     }
     fn adjust_cached_size(&self, size: &mut (i32, i32)) {
         let windef_borrow: &WindowDefinition = Rc::borrow(&self.window_definitions);
@@ -1063,7 +1066,13 @@ impl GenericWindow for WindowsWindow {
         unsafe {
             if self.ole_reference_count > 0 && IsWindow(self.hwnd.get()).0 != 0 {
                 let res = RevokeDragDrop(self.hwnd.get());
-                if let Ok(()) = res {}
+                if let Ok(()) = res {
+                    println!(
+                        "Not all references to window are released, {} left",
+                        self.ole_reference_count
+                    );
+                    // ensureMsgf(OLEReferenceCount == 0, TEXT("Not all references to window are released, %i left"), OLEReferenceCount);
+                }
             }
             DestroyWindow(self.hwnd.get());
         }
@@ -1074,11 +1083,24 @@ impl GenericWindow for WindowsWindow {
     }
 
     fn set_dpi_scale_factor(&mut self, factor: f32) {
-        todo!()
+        self.dpi_scale_factor = factor;
     }
 
-    fn draw_attention(&self, parameters: crate::generic::window::WindowDrawAttentionRequestType) {
-        todo!()
+    fn draw_attention(&self, parameters: WindowDrawAttentionRequestType) {
+        let mut flash_info = FLASHWINFO::default();
+        flash_info.cbSize = mem::size_of::<FLASHWINFO>() as u32;
+        flash_info.hwnd = self.hwnd.get();
+
+        match parameters {
+            WindowDrawAttentionRequestType::UntilActivated => {
+                flash_info.dwFlags = FLASHW_TRAY | FLASHW_TIMERNOFG
+            }
+            WindowDrawAttentionRequestType::Stop => flash_info.dwFlags = FLASHW_STOP,
+            _ => unreachable!("Invalid request type {:?}", parameters),
+            //ensureMsgf(false, TEXT("FWindowsWindow::DrawAttention(): Invalid request type %d"), static_cast<int32>(Parameters.RequestType));
+        }
+
+        unsafe { FlashWindowEx(&flash_info) };
     }
 
     fn set_native_window_buttons_visibility(&mut self, visible: bool) {
