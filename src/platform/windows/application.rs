@@ -807,11 +807,11 @@ impl WindowsApplication {
 									let right_edge = self.clip_cursor_rect.left + (0.9 * clip_width as f32) as i32;
 
 									let mut set = false;
-									if (cursor_point.y < top_edge) { cursor_point.y = bottom_edge - wrap_leeway;	set = true; }
-									else if (cursor_point.y > bottom_edge) { cursor_point.y = top_edge + wrap_leeway; set = true; }
+									if cursor_point.y < top_edge { cursor_point.y = bottom_edge - wrap_leeway;	set = true; }
+									else if cursor_point.y > bottom_edge { cursor_point.y = top_edge + wrap_leeway; set = true; }
 
-									if (cursor_point.x < left_edge) { cursor_point.x = right_edge - wrap_leeway;	set = true; }
-									else if (cursor_point.x > right_edge) { cursor_point.x = left_edge + wrap_leeway; set = true; }
+									if cursor_point.x < left_edge { cursor_point.x = right_edge - wrap_leeway;	set = true; }
+									else if cursor_point.x > right_edge { cursor_point.x = left_edge + wrap_leeway; set = true; }
 
 									if set {
 										//UE_LOG(LogWindowsDesktop, Log, TEXT("Wrapping Cursor to X: %d Y: %d ---- TopEdge: %d BottomEdge: %d left_edge: %d RightEdge: %d "), CursorPoint.x, CursorPoint.y, TopEdge, BottomEdge, LeftEdge, RightEdge);
@@ -821,8 +821,8 @@ impl WindowsApplication {
 										self.last_cursor_point.y = cursor_point.y;
 
 										self.num_pre_wrap_msgs_to_respect = 10;
-										last_cursor_point_pre_wrap.X = cursor_pointNoWrap.x;
-										last_cursor_point_pre_wrap.Y = cursor_pointNoWrap.y;
+										self.last_cursor_point_pre_wrap.X = cursor_point_no_wrap.x;
+										self.last_cursor_point_pre_wrap.Y = cursor_point_no_wrap.y;
 									}
 									
 									/*
@@ -843,7 +843,7 @@ impl WindowsApplication {
 								}
 
 								// Send a delta assuming it's not zero or beyond our max delta 
-								if ((delta_x != 0 || delta_y != 0) && delta_x.abs() < delta_width_max && delta_y.abs() < delta_height_max)
+								if (delta_x != 0 || delta_y != 0) && delta_x.abs() < delta_width_max && delta_y.abs() < delta_height_max
 								{
 									self.defer_message(&current_native_event_window, hwnd, msg, wparam, lparam, delta_x, delta_y, MOUSE_MOVE_RELATIVE);
 								}
@@ -951,7 +951,7 @@ impl WindowsApplication {
                             0,
                         );
                     }
-                    case WM_SIZE => {
+                    WM_SIZE => {
 				self.defer_message(&current_native_event_window, hwnd, msg, wparam, lparam );
 
 				let was_maximized = (wparam == SIZE_MAXIMIZED);
