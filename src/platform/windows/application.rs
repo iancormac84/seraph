@@ -1,3 +1,4 @@
+use crate::core::math::int_point::IntPoint;
 use crate::generic::application::{
     GenericApplication, MonitorInfo, PlatformRect, DEBUG_ACTION_ZONE_RATIO, DEBUG_SAFE_ZONE_RATIO,
 };
@@ -5,6 +6,7 @@ use crate::generic::application_message_handler::{
     ApplicationMessageHandler, WindowAction, WindowSizeLimits, WindowZone,
 };
 use cgmath::Point2;
+use windows::Win32::Devices::HumanInterfaceDevice::MOUSE_VIRTUAL_DESKTOP;
 //use crate::generic::cursor::ICursor;
 use crate::generic::window::GenericWindow;
 use crate::generic::window_definition::{WindowDefinition, WindowTransparency, WindowType};
@@ -197,7 +199,7 @@ pub enum TaskbarProgressState {
 
 //TODO implement a TaskbarList struct that is built around the ITaskbarList3 COM interface
 
-/*pub struct DeferredWindowsMessage {
+pub struct DeferredWindowsMessage {
     pub native_window: Weak<WindowsWindow>,
     pub hwnd: HWND,
     pub message: u32,
@@ -229,7 +231,7 @@ impl DeferredWindowsMessage {
             raw_input_flags: raw_input_flags,
         }
     }
-}*/
+}
 
 pub enum WindowsDragDropOperationType {
     DragEnter,
@@ -262,7 +264,7 @@ pub struct DeferredWindowsDragDropOperation {
 //I just got an idea about making it a struct that deals with a type that implements a trait that contains the process_message method, but probably not.
 //Actually, this will most likely remain a trait whose method wraps the real ProcessMessage method, since the real method needs an ABI signature that is not compatible with Rust's method
 //call signatures.
-pub trait IWindowsMessageHandler: PartialEq {
+pub trait IWindowsMessageHandler {
     fn process_message(
         &mut self,
         hwnd: HWND,
@@ -300,8 +302,15 @@ unsafe fn init_windows_application(hinstance: HINSTANCE, hicon: HICON) {
     WINDOWS_APPLICATION = Some(app);
 }
 
+fn HIWORD(l: isize) -> isize {
+    (l >> 16) & 0xffff
+}
+
+fn LOWORD(l: isize) -> isize {
+    l & 0xffff
+}
+
 //TODO implement GenericApplication trait. Also most likely trait based on IForceFeedbackSystem.
-#[derive(Debug, Clone)]
 pub struct WindowsApplication {
     cursor: Rc<WindowsCursor>,
     minimized: bool,
@@ -319,10 +328,15 @@ pub struct WindowsApplication {
     modifier_key_state: [bool; ModifierKey::Count as usize],
     in_modal_size_loop: bool,
     pub display_metrics: DisplayMetrics,
-    //message_handlers: Vec<&dyn IWindowsMessageHandler>,
+    message_handlers: Vec<Box<dyn IWindowsMessageHandler>>,
     startup_sticky_keys: STICKYKEYS,
     startup_toggle_keys: TOGGLEKEYS,
     startup_filter_keys: FILTERKEYS,
+    simulating_high_precision_mouse_input_for_rdp: bool,
+    num_pre_wrap_msgs_to_respect: i32,
+    last_cursor_point: IntPoint2,
+    last_cursor_point_pre_wrap: IntPoint2,
+    clip_cursor_rect: RECT,
 }
 
 impl WindowsApplication {
@@ -420,16 +434,27 @@ impl WindowsApplication {
             windows: RefCell::new(vec![]),
             modifier_key_state: [false; ModifierKey::Count as usize],
             display_metrics: display_metrics,
-            //message_handlers: vec![],
+            message_handlers: vec![],
             startup_sticky_keys: STICKYKEYS::default(),
             startup_toggle_keys: TOGGLEKEYS::default(),
             startup_filter_keys: FILTERKEYS::default(),
+            simulating_high_precision_mouse_input_for_rdp: false,
+            num_pre_wrap_msgs_to_respect: 0,
+            last_cursor_point: IntPoint2 {
+                x: 0,
+                y: 0,
+            },
+            last_cursor_point_pre_wrap: IntPoint2 {
+                x: 0,
+                y: 0,
+            },
+            clip_cursor_rect: RECT::default(),
         };
         println!("Successfully created winapp");
         let class_registered = winapp.register_class(hinstance, hicon);
         println!("Have we registered class? {}", class_registered);
         winapp.query_connected_mice();
-        println!("winapp debug is {:#?}", winapp);
+        //println!("winapp debug is {:#?}", winapp);
         winapp
     }
     pub fn make_window(&self) -> RefCell<WindowsWindow> {
@@ -458,16 +483,6 @@ impl WindowsApplication {
         );
         let mut windows_mut_borrow = self.windows.borrow_mut();
         windows_mut_borrow.push(window);
-        /*let mut windows_mut_borrow = self.windows.borrow_mut();
-        windows_mut_borrow.push(window);
-        let idx = windows_mut_borrow.len() - 1;
-        windows_mut_borrow[idx].borrow_mut().initialize(
-            &self,
-            in_definition,
-            self.instance_handle,
-            parent_window,
-            show_immediately,
-        );*/
     }
     fn register_class(&self, hinstance: HINSTANCE, hicon: HICON) -> bool {
         unsafe {
@@ -642,56 +657,66 @@ impl WindowsApplication {
                 );
                 let current_native_event_window = current_native_event_window_opt.unwrap();
 
+                let mut message_externally_handled = false;
+                let mut external_message_handler_result = 0;
+
+                for handler in self.message_handlers {
+                    let mut handler_result = 0;
+                    let res = handler.process_message(hwnd, msg, wparam, lparam, &mut handler_result);
+                    if !message_externally_handled {
+                        message_externally_handled = true;
+                        external_message_handler_result = handler_result;
+                    }
+                }
+
                 match msg {
-                    WM_GETMINMAXINFO => {
-                        let mut min_max_info: MINMAXINFO = {
-                            let mmi = mem::transmute::<LPARAM, *const MINMAXINFO>(lparam);
-                            *mmi
-                        };
-                        let borrowed_wnd = current_native_event_window.borrow();
-                        let windef = borrowed_wnd.get_definition();
-                        let ref size_limits: WindowSizeLimits = windef.size_limits;
-
-                        // We need to inflate the max values if using an OS window border
-                        let mut border_width: i32 = 0;
-                        let mut border_height: i32 = 0;
-                        if windef.has_os_window_border {
-                            let window_style = GetWindowLongW(hwnd, GWL_STYLE);
-                            let window_ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
-
-                            // This adjusts a zero rect to give us the size of the border
-                            let mut border_rect: RECT = mem::zeroed();
-                            AdjustWindowRectEx(
-                                &mut border_rect,
-                                window_style as u32,
-                                false,
-                                window_ex_style as u32,
-                            );
-
-                            border_width = border_rect.right - border_rect.left;
-                            border_height = border_rect.bottom - border_rect.top;
-                        }
-
-                        // We always apply BorderWidth and BorderHeight since Slate always works with client area window sizes
-                        min_max_info.ptMinTrackSize.x = size_limits
-                            .get_min_width()
-                            .unwrap_or(min_max_info.ptMinTrackSize.x as f32)
-                            as i32;
-                        min_max_info.ptMinTrackSize.y = size_limits
-                            .get_min_height()
-                            .unwrap_or(min_max_info.ptMinTrackSize.y as f32)
-                            as i32;
-                        min_max_info.ptMaxTrackSize.x = size_limits
-                            .get_max_width()
-                            .unwrap_or(min_max_info.ptMaxTrackSize.x as f32)
-                            as i32
-                            + border_width;
-                        min_max_info.ptMaxTrackSize.y = size_limits
-                            .get_max_height()
-                            .unwrap_or(min_max_info.ptMaxTrackSize.y as f32)
-                            as i32
-                            + border_height;
+                    WM_INPUTLANGCHANGEREQUEST | WM_INPUTLANGCHANGE | WM_IME_SETCONTEXT | WM_IME_COMPOSITION | WM_IME_ENDCOMPOSITION | WM_IME_CHAR => {
+                        self.defer_message(&current_native_event_window, hwnd, msg, wparam, lparam, 0, 0, 0);
                         return 0;
+                    }
+                    WM_IME_NOTIFY => {
+                        self.defer_message(&current_native_event_window, hwnd, msg, wparam, lparam, 0, 0, 0);
+                        return 0;
+                    }
+                    WM_IME_REQUEST => {
+                        self.defer_message(&current_native_event_window, hwnd, msg, wparam, lparam, 0, 0, 0);
+                        return 0;
+                    }
+                    WM_CHAR => {
+                        self.defer_message(&current_native_event_window, hwnd, msg, wparam, lparam, 0, 0, 0);
+                        return 0;
+                    }
+                    WM_SYSCHAR => {
+                        if !self.consume_alt_space && (HIWORD(lparam) & 0x2000) != 0 && wparam == VK_SPACE as usize {
+
+                        } else {
+                            return 0;
+                        }
+                    }
+                    WM_SYSKEYDOWN => {
+                        // Alt-F4 or Alt+Space was pressed.
+				        if wparam == VK_F4 as usize {
+                            // Allow alt+f4 to close the window, but write a log warning
+                            println!("Alt-F4 pressed!");
+                        } // If we're consuming alt+space, pass it along
+				        else if self.consume_alt_space || wparam != VK_SPACE as usize {
+                            self.defer_message(&current_native_event_window, hwnd, msg, wparam, lparam, 0, 0, 0);
+                        }
+                    }
+                    WM_KEYDOWN | WM_SYSKEYUP | WM_KEYUP | WM_LBUTTONDBLCLK | WM_LBUTTONDOWN | WM_MBUTTONDBLCLK | WM_MBUTTONDOWN | WM_RBUTTONDBLCLK | WM_RBUTTONDOWN | WM_XBUTTONDBLCLK | WM_XBUTTONDOWN | WM_XBUTTONUP | WM_LBUTTONUP | WM_MBUTTONUP | WM_RBUTTONUP | WM_NCMOUSEMOVE | WM_MOUSEMOVE | WM_MOUSEWHEEL | WM_TOUCH => {
+                        self.defer_message(&current_native_event_window, hwnd, msg, wparam, lparam, 0, 0, 0);
+                        return 0;
+                    }
+                    WM_SETCURSOR => {
+                        self.defer_message(&current_native_event_window, hwnd, msg, wparam, lparam, 0, 0, 0);
+
+                        // If we're rendering our own window border, we'll "handle" this event so that Windows doesn't try to manage the cursor
+			            // appearance for us in the non-client area.  However, for OS window borders we need to fall through to DefWindowProc to
+			            // allow Windows to draw the resize cursor
+                        if current_native_event_window.borrow().get_definition().has_os_window_border {
+                            // Handled
+				            return 0;
+                        }
                     }
                     WM_INPUT => {
                         let mut size: u32 = 0;
@@ -703,56 +728,158 @@ impl WindowsApplication {
                             mem::size_of::<RAWINPUTHEADER>() as u32,
                         );
 
-                        let raw = {
+                        let (raw, raw_input_num) = {
                             let mut raw = RAWINPUT::default();
-                            assert!(
-                                GetRawInputData(
+                            let raw_input_num = GetRawInputData(
                                     lparam as HRAWINPUT,
                                     RID_INPUT,
                                     &mut raw as *mut RAWINPUT as *mut c_void,
                                     &mut size,
                                     mem::size_of::<RAWINPUTHEADER>() as u32
-                                ) == size
-                            );
-                            raw
+                                );
+                            (raw, raw_input_num)
                         };
-                        let raw_mouse = raw.data.mouse;
+                        if raw_input_num == size {
+                            let raw_mouse = raw.data.mouse;
 
-                        if raw.header.dwType == RIM_TYPEMOUSE {
-                            let is_absolute_input = (raw_mouse.usFlags as u32
-                                & MOUSE_MOVE_ABSOLUTE)
-                                == MOUSE_MOVE_ABSOLUTE;
-                            if is_absolute_input {
-                                // Since the raw input is coming in as absolute it is likely the user is using a tablet
-                                // or perhaps is interacting through a virtual desktop
+                            if raw.header.dwType == RIM_TYPEMOUSE {
+                                let is_absolute_input = (raw_mouse.usFlags as u32
+                                    & MOUSE_MOVE_ABSOLUTE)
+                                    == MOUSE_MOVE_ABSOLUTE;
+                                if is_absolute_input {
+                                    if self.simulating_high_precision_mouse_input_for_rdp {	
+								        let is_virtual_screen = (raw_mouse.usFlags as u32 & MOUSE_VIRTUAL_DESKTOP) == MOUSE_VIRTUAL_DESKTOP;
+
+								        // Get the new cursor position
+								        let mut cursor_point = POINT::default();
+								        let left = if is_virtual_screen { GetSystemMetrics(SM_XVIRTUALSCREEN) } else { 0 };
+								let top = if is_virtual_screen { GetSystemMetrics(SM_YVIRTUALSCREEN) } else { 0 };
+								let width = GetSystemMetrics(if is_virtual_screen { SM_CXVIRTUALSCREEN } else { SM_CXSCREEN });
+								let height = GetSystemMetrics(if is_virtual_screen { SM_CYVIRTUALSCREEN } else { SM_CYSCREEN });
+
+								cursor_point.x = ((raw_mouse.lLastX as f32 / 65535.0) * width as f32) as i32 + left;
+								cursor_point.y = ((raw_mouse.lLastY as f32 / 65535.0) * height as f32) as i32 + top;
+
+								let clip_width = self.clip_cursor_rect.right - self.clip_cursor_rect.left;
+								let clip_height = self.clip_cursor_rect.bottom - self.clip_cursor_rect.top;
+
+								let delta_width_max = (clip_width as f32 * 0.4) as i32;
+								let delta_height_max = (clip_height as f32 * 0.4) as i32;
+
+								let cursor_point_no_wrap = cursor_point;
+
+								let can_accept_pre_wrap_msg = self.num_pre_wrap_msgs_to_respect > 0;
+								self.num_pre_wrap_msgs_to_respect -= 1;
+
+								// Calculate the cursor delta from the last position
+								// We do this prior to and wrapping for continuous input as that would mean an incorrect delta we'd just ignore
+								let delta_x = cursor_point.x - self.last_cursor_point.x;
+								let delta_y = cursor_point.y - self.last_cursor_point.y;
+
+								// Always skip wrapping if no movement has occured.
+								let accepting_pre_wrap_delta = delta_x == 0 && delta_y == 0;
+
+								if can_accept_pre_wrap_msg && !accepting_pre_wrap_delta {
+									let delta_x_pre_wrap = cursor_point.x - self.last_cursor_point_pre_wrap.x;
+									let delta_y_pre_wrap = cursor_point.y - self.last_cursor_point_pre_wrap.y;
+
+									let delta_len = (delta_x * delta_x) + (delta_y * delta_y);
+									let delta_pre_wrap_len = (delta_x_pre_wrap * delta_x_pre_wrap) + (delta_y_pre_wrap * delta_y_pre_wrap);
+
+									if delta_pre_wrap_len < delta_len {
+										accepting_pre_wrap_delta = true;
+
+										delta_x = delta_x_pre_wrap;
+										delta_y = delta_y_pre_wrap;
+										self.last_cursor_point_pre_wrap.x = cursor_point.x;
+										self.last_cursor_point_pre_wrap.y = cursor_point.y;
+
+										//UE_LOG(LogWindowsDesktop, Log, TEXT("Accept PreWrap Delta X: %d Y: %d  ---- Last X: %d Y: %d ---- Cur X: %d Y: %d ---- Width: %d Height: %d"), DeltaX, DeltaY, LastCursorPointPreWrap.X, LastCursorPointPreWrap.Y, CursorPoint.x, CursorPoint.y, (int32)Width, (int32)Height);
+									}
+								}
+
+								if !accepting_pre_wrap_delta {
+									// Wrap and set cursor position in necessary
+									let wrap_leeway = 50; // We add some leeway on the wrap so that if the user is doing small movements hear the border we don't wrap back and fourth constantly
+									let top_edge = self.clip_cursor_rect.top + (0.1 * clip_height as f32) as i32;
+									let bottom_edge = self.clip_cursor_rect.top + (0.9 * clip_height as f32) as i32;
+									let left_edge = self.clip_cursor_rect.left + (0.1 * clip_width as f32) as i32;
+									let right_edge = self.clip_cursor_rect.left + (0.9 * clip_width as f32) as i32;
+
+									let mut set = false;
+									if (cursor_point.y < top_edge) { cursor_point.y = bottom_edge - wrap_leeway;	set = true; }
+									else if (cursor_point.y > bottom_edge) { cursor_point.y = top_edge + wrap_leeway; set = true; }
+
+									if (cursor_point.x < left_edge) { cursor_point.x = right_edge - wrap_leeway;	set = true; }
+									else if (cursor_point.x > right_edge) { cursor_point.x = left_edge + wrap_leeway; set = true; }
+
+									if set {
+										//UE_LOG(LogWindowsDesktop, Log, TEXT("Wrapping Cursor to X: %d Y: %d ---- TopEdge: %d BottomEdge: %d left_edge: %d RightEdge: %d "), CursorPoint.x, CursorPoint.y, TopEdge, BottomEdge, LeftEdge, RightEdge);
+
+										MessageHandler.SetCursorPos(FVector2D(cursor_point.x,cursor_point.y));
+										self.last_cursor_point.x = cursor_point.x;
+										self.last_cursor_point.y = cursor_point.y;
+
+										self.num_pre_wrap_msgs_to_respect = 10;
+										last_cursor_point_pre_wrap.X = cursor_pointNoWrap.x;
+										last_cursor_point_pre_wrap.Y = cursor_pointNoWrap.y;
+									}
+									
+									/*
+									if (DeltaX != 0 || DeltaY != 0)
+									{
+										if (FMath::Abs(DeltaX) < DeltaWidthMax && FMath::Abs(DeltaY) < DeltaHeightMax)
+										{
+											UE_LOG(LogWindowsDesktop, Log, TEXT("Accept Delta X: %d Y: %d  ---- Last X: %d Y: %d ---- Cur X: %d Y: %d ---- Width: %d Height: %d"), DeltaX, DeltaY, LastCursorPoint.X, LastCursorPoint.Y, CursorPoint.x, CursorPoint.y, (int32)Width, (int32)Height);
+										}
+										else
+										{
+											UE_LOG(LogWindowsDesktop, Log, TEXT("IGNORE Delta X: %d Y: %d  ---- Last X: %d Y: %d ---- Cur X: %d Y: %d ---- Width: %d Height: %d"), DeltaX, DeltaY, LastCursorPoint.X, LastCursorPoint.Y, CursorPoint.x, CursorPoint.y, (int32)Width, (int32)Height);
+										}
+									}*/
+
+									self.last_cursor_point.x = cursor_point.x;
+									self.last_cursor_point.y = cursor_point.y;
+								}
+
+								// Send a delta assuming it's not zero or beyond our max delta 
+								if ((delta_x != 0 || delta_y != 0) && delta_x.abs() < delta_width_max && delta_y.abs() < delta_height_max)
+								{
+									self.defer_message(&current_native_event_window, hwnd, msg, wparam, lparam, delta_x, delta_y, MOUSE_MOVE_RELATIVE);
+								}
+								return 1;
+                                } else {
+                                    // Since the raw input is coming in as absolute it is likely the user is using a tablet
+                                    // or perhaps is interacting through a virtual desktop
+                                    self.defer_message(
+                                        &current_native_event_window,
+                                        hwnd,
+                                        msg,
+                                        wparam,
+                                        lparam,
+                                        0,
+                                        0,
+                                        MOUSE_MOVE_ABSOLUTE as u32,
+                                    );
+                                    return 1;
+                                }
+    
+                                // Since raw input is coming in as relative it is likely a traditional mouse device
+                                let x_pos_relative = raw_mouse.lLastX;
+                                let y_pos_relative = raw_mouse.lLastY;
+    
                                 self.defer_message(
                                     &current_native_event_window,
                                     hwnd,
                                     msg,
                                     wparam,
                                     lparam,
-                                    0,
-                                    0,
-                                    MOUSE_MOVE_ABSOLUTE as u32,
+                                    x_pos_relative,
+                                    y_pos_relative,
+                                    MOUSE_MOVE_RELATIVE as u32,
                                 );
                                 return 1;
                             }
-
-                            // Since raw input is coming in as relative it is likely a traditional mouse device
-                            let x_pos_relative = raw_mouse.lLastX;
-                            let y_pos_relative = raw_mouse.lLastY;
-
-                            self.defer_message(
-                                &current_native_event_window,
-                                hwnd,
-                                msg,
-                                wparam,
-                                lparam,
-                                x_pos_relative,
-                                y_pos_relative,
-                                MOUSE_MOVE_RELATIVE as u32,
-                            );
-                            return 1;
                         }
                     }
                     WM_NCCALCSIZE => {
@@ -812,78 +939,6 @@ impl WindowsApplication {
                             return 0;
                         }
                     }
-                    WM_SIZING => {
-                        let borrowed_wnd = current_native_event_window.borrow();
-                        let windef = borrowed_wnd.get_definition();
-                        if windef.should_preserve_aspect_ratio {
-                            // The rect we get in lparam is window rect, but we need to preserve client's aspect ratio,
-                            // so we need to find what the border and title bar sizes are, if window has them and adjust the rect.
-                            let mut window_info: WINDOWINFO = mem::zeroed();
-                            window_info.cbSize = mem::size_of::<WINDOWINFO>() as u32;
-                            GetWindowInfo(hwnd, &mut window_info);
-
-                            let mut test_rect: RECT = mem::zeroed();
-                            AdjustWindowRectEx(
-                                &mut test_rect,
-                                window_info.dwStyle,
-                                false,
-                                window_info.dwExStyle,
-                            );
-
-                            let mut rect: RECT = {
-                                let lprect = mem::transmute::<LPARAM, *const RECT>(lparam);
-                                *lprect
-                            };
-
-                            rect.left -= test_rect.left;
-                            rect.right -= test_rect.right;
-                            rect.top -= test_rect.top;
-                            rect.bottom -= test_rect.bottom;
-
-                            let aspect_ratio =
-                                current_native_event_window.borrow().get_aspect_ratio();
-                            let new_width = rect.right - rect.left;
-                            let new_height = rect.bottom - rect.top;
-
-                            if wparam == WMSZ_LEFT as usize || wparam == WMSZ_RIGHT as usize {
-                                let adjusted_height: i32 = new_width / aspect_ratio as i32;
-                                rect.top -= (adjusted_height - new_height) / 2;
-                                rect.bottom += (adjusted_height - new_height) / 2;
-                                //break;
-                            } else if wparam == WMSZ_TOP as usize || wparam == WMSZ_BOTTOM as usize
-                            {
-                                let adjusted_width: i32 = new_height * aspect_ratio as i32;
-                                rect.left -= (adjusted_width - new_width) / 2;
-                                rect.right += (adjusted_width - new_width) / 2;
-                                //break;
-                            } else if wparam == WMSZ_TOPLEFT as usize {
-                                let adjusted_height: i32 = new_width / aspect_ratio as i32;
-                                rect.top -= adjusted_height - new_height;
-                                //break;
-                            } else if wparam == WMSZ_TOPRIGHT as usize {
-                                let adjusted_height: i32 = new_width / aspect_ratio as i32;
-                                rect.top -= adjusted_height - new_height;
-                                //break;
-                            } else if wparam == WMSZ_BOTTOMLEFT as usize {
-                                let adjusted_height: i32 = new_width / aspect_ratio as i32;
-                                rect.bottom += adjusted_height - new_height;
-                                //break;
-                            } else if wparam == WMSZ_BOTTOMRIGHT as usize {
-                                let adjusted_height: i32 = new_width / aspect_ratio as i32;
-                                rect.bottom += adjusted_height - new_height;
-                                //break;
-                            }
-
-                            AdjustWindowRectEx(
-                                &mut rect,
-                                window_info.dwStyle,
-                                false,
-                                window_info.dwExStyle,
-                            );
-
-                            return 1;
-                        }
-                    }
                     WM_SHOWWINDOW => {
                         self.defer_message(
                             &current_native_event_window,
@@ -895,6 +950,140 @@ impl WindowsApplication {
                             0,
                             0,
                         );
+                    }
+                    case WM_SIZE => {
+				self.defer_message(&current_native_event_window, hwnd, msg, wparam, lparam );
+
+				let was_maximized = (wparam == SIZE_MAXIMIZED);
+				let was_restored = (wparam == SIZE_RESTORED);
+
+				if was_maximized || was_restored {
+					//MessageHandler->OnWindowAction(CurrentNativeEventWindow, was_maximized ? EWindowAction::Maximize : EWindowAction::Restore);
+				}
+
+				return 0;
+			}
+            WM_SIZING => {
+                let borrowed_wnd = current_native_event_window.borrow();
+                let windef = borrowed_wnd.get_definition();
+                if windef.should_preserve_aspect_ratio {
+                    // The rect we get in lparam is window rect, but we need to preserve client's aspect ratio,
+                    // so we need to find what the border and title bar sizes are, if window has them and adjust the rect.
+                    let mut window_info: WINDOWINFO = mem::zeroed();
+                    window_info.cbSize = mem::size_of::<WINDOWINFO>() as u32;
+                    GetWindowInfo(hwnd, &mut window_info);
+
+                    let mut test_rect: RECT = mem::zeroed();
+                    AdjustWindowRectEx(
+                        &mut test_rect,
+                        window_info.dwStyle,
+                        false,
+                        window_info.dwExStyle,
+                    );
+
+                    let mut rect: RECT = {
+                        let lprect = mem::transmute::<LPARAM, *const RECT>(lparam);
+                        *lprect
+                    };
+
+                    rect.left -= test_rect.left;
+                    rect.right -= test_rect.right;
+                    rect.top -= test_rect.top;
+                    rect.bottom -= test_rect.bottom;
+
+                    let aspect_ratio =
+                        current_native_event_window.borrow().get_aspect_ratio();
+                    let new_width = rect.right - rect.left;
+                    let new_height = rect.bottom - rect.top;
+
+                    if wparam == WMSZ_LEFT as usize || wparam == WMSZ_RIGHT as usize {
+                        let adjusted_height: i32 = new_width / aspect_ratio as i32;
+                        rect.top -= (adjusted_height - new_height) / 2;
+                        rect.bottom += (adjusted_height - new_height) / 2;
+                        //break;
+                    } else if wparam == WMSZ_TOP as usize || wparam == WMSZ_BOTTOM as usize
+                    {
+                        let adjusted_width: i32 = new_height * aspect_ratio as i32;
+                        rect.left -= (adjusted_width - new_width) / 2;
+                        rect.right += (adjusted_width - new_width) / 2;
+                        //break;
+                    } else if wparam == WMSZ_TOPLEFT as usize {
+                        let adjusted_height: i32 = new_width / aspect_ratio as i32;
+                        rect.top -= adjusted_height - new_height;
+                        //break;
+                    } else if wparam == WMSZ_TOPRIGHT as usize {
+                        let adjusted_height: i32 = new_width / aspect_ratio as i32;
+                        rect.top -= adjusted_height - new_height;
+                        //break;
+                    } else if wparam == WMSZ_BOTTOMLEFT as usize {
+                        let adjusted_height: i32 = new_width / aspect_ratio as i32;
+                        rect.bottom += adjusted_height - new_height;
+                        //break;
+                    } else if wparam == WMSZ_BOTTOMRIGHT as usize {
+                        let adjusted_height: i32 = new_width / aspect_ratio as i32;
+                        rect.bottom += adjusted_height - new_height;
+                        //break;
+                    }
+
+                    AdjustWindowRectEx(
+                        &mut rect,
+                        window_info.dwStyle,
+                        false,
+                        window_info.dwExStyle,
+                    );
+
+                    return 1;
+                }
+            }
+                    WM_GETMINMAXINFO => {
+                        let mut min_max_info: MINMAXINFO = {
+                            let mmi = mem::transmute::<LPARAM, *const MINMAXINFO>(lparam);
+                            *mmi
+                        };
+                        let borrowed_wnd = current_native_event_window.borrow();
+                        let windef = borrowed_wnd.get_definition();
+                        let ref size_limits: WindowSizeLimits = windef.size_limits;
+
+                        // We need to inflate the max values if using an OS window border
+                        let mut border_width: i32 = 0;
+                        let mut border_height: i32 = 0;
+                        if windef.has_os_window_border {
+                            let window_style = GetWindowLongW(hwnd, GWL_STYLE);
+                            let window_ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE);
+
+                            // This adjusts a zero rect to give us the size of the border
+                            let mut border_rect: RECT = mem::zeroed();
+                            AdjustWindowRectEx(
+                                &mut border_rect,
+                                window_style as u32,
+                                false,
+                                window_ex_style as u32,
+                            );
+
+                            border_width = border_rect.right - border_rect.left;
+                            border_height = border_rect.bottom - border_rect.top;
+                        }
+
+                        // We always apply BorderWidth and BorderHeight since Slate always works with client area window sizes
+                        min_max_info.ptMinTrackSize.x = size_limits
+                            .get_min_width()
+                            .unwrap_or(min_max_info.ptMinTrackSize.x as f32)
+                            as i32;
+                        min_max_info.ptMinTrackSize.y = size_limits
+                            .get_min_height()
+                            .unwrap_or(min_max_info.ptMinTrackSize.y as f32)
+                            as i32;
+                        min_max_info.ptMaxTrackSize.x = size_limits
+                            .get_max_width()
+                            .unwrap_or(min_max_info.ptMaxTrackSize.x as f32)
+                            as i32
+                            + border_width;
+                        min_max_info.ptMaxTrackSize.y = size_limits
+                            .get_max_height()
+                            .unwrap_or(min_max_info.ptMaxTrackSize.y as f32)
+                            as i32
+                            + border_height;
+                        return 0;
                     }
                     WM_ERASEBKGND => {
                         // Intercept background erasing to eliminate flicker.
@@ -1111,6 +1300,9 @@ impl WindowsApplication {
         mouse_y: i32,
         raw_input_flags: u32,
     ) {
+        if self.allowed_to_defer_message_processing {
+            self.deferred_messages.push(DeferredMessage);
+        }
     }
     /*fn add_message_handler(&mut self, in_message_handler: &dyn IWindowsMessageHandler) {
         if !self.message_handlers.contains(&in_message_handler)
