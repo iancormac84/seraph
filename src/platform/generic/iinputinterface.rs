@@ -48,7 +48,7 @@ impl HapticFeedbackBuffer {
         }
     }
     pub fn needs_update(&self) -> bool {
-        self.finished_playing
+        !self.finished_playing
     }
 }
 

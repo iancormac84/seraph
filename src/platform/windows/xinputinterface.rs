@@ -30,14 +30,17 @@ struct ControllerState {
     /** Right trigger analog value */
     right_trigger_analog: u8,
 
-    /** Id of the controller */
-    controller_id: i32,
-
     /** If the controller is currently connected */
     is_connected: bool,
 
+    /** Id of the controller */
+    controller_id: i32,
+
     /** Current force feedback values */
     force_feedback: ForceFeedbackValues,
+
+    last_large_value: f32,
+    last_small_value: f32,
 }
 
 pub struct XInputInterface {

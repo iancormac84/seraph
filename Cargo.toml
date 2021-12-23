@@ -30,4 +30,6 @@ features = [
 bitflags = "*"
 cgmath = "*"
 lazy_static = "*"
+once_cell = "*"
+parking_lot = "*"
 winreg = "*"

@@ -1,11 +1,10 @@
 use seraph::generic::window::GenericWindow;
 use seraph::generic::window_definition::WindowActivationPolicy;
 use seraph::generic::{WindowDefinition, WindowSizeLimits, WindowTransparency, WindowType};
-use seraph::windows::application::WindowsApplication;
+use seraph::windows::application::{
+    create_windows_application, WindowsApplication, WINDOWS_APPLICATION,
+};
 use seraph::windows::utils::ToWide;
-use std::cell::RefCell;
-use std::ptr;
-use std::rc::Rc;
 use windows::Win32::{
     Foundation::PWSTR,
     System::LibraryLoader::GetModuleHandleW,
@@ -51,11 +50,12 @@ fn main() {
     let icon = unsafe { LoadImageW(0, IDI_APPLICATION, 1, 0, 0, 0x00008000) };
     println!("Made icon");
     let inst_handle = unsafe { GetModuleHandleW(PWSTR("".to_wide_null().as_mut_ptr())) };
-    let application = WindowsApplication(inst_handle, icon.0);
+    let application = create_windows_application(inst_handle, icon.0);
     println!("Made application. address is {:p}", application);
-    //println!("Also, application debug is {:#?}", unsafe {&*application});
-    let rc_window = application.make_window();
-    application.initialize_window(&rc_window, &Rc::new(wd), None, true);
+    println!("Also, application debug is {:#?}", &*application);
+    let mut app_lock = application.lock();
+    let rc_window = app_lock.make_window();
+    app_lock.initialize_window(&rc_window, wd, &None, true);
     rc_window.borrow().show();
-    application.pump_messages(0.0);
+    app_lock.pump_messages(0.0);
 }

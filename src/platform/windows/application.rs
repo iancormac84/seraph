@@ -9,21 +9,14 @@ use cgmath::Point2;
 use crate::generic::window::GenericWindow;
 use crate::generic::window_definition::{WindowDefinition, WindowTransparency, WindowType};
 use crate::windows::cursor::WindowsCursor;
-use crate::windows::utils;
 use crate::windows::utils::ToWide;
 use crate::windows::window::{WindowsWindow, APP_WINDOW_CLASS};
 use crate::windows::xinputinterface::XInputInterface;
 use lazy_static::lazy_static;
+use once_cell::sync::OnceCell;
+use parking_lot::Mutex;
 use std::borrow::Borrow;
-use std::cell::RefCell;
-use std::collections::BTreeMap;
-use std::io::Error;
-use std::mem::MaybeUninit;
-use std::os::raw::c_void;
-use std::rc::{Rc, Weak};
-use std::sync::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
-use std::sync::{Arc, Once};
-use std::{mem, ptr};
+use std::{cell::RefCell, collections::BTreeMap, io::Error, mem, os::raw::c_void, ptr, rc::Rc};
 
 use windows::Win32::{
     Devices::{
@@ -32,7 +25,6 @@ use windows::Win32::{
             SetupDiGetClassDevsExW, SetupDiOpenDevRegKey, CR_SUCCESS, DICS_FLAG_GLOBAL,
             DIGCF_PRESENT, DIREG_DEV, GUID_DEVCLASS_MONITOR, MAX_DEVICE_ID_LEN, SP_DEVINFO_DATA,
         },
-        Display::DEVINFO,
         HumanInterfaceDevice::{MOUSE_MOVE_ABSOLUTE, MOUSE_MOVE_RELATIVE},
     },
     Foundation::{
@@ -74,19 +66,20 @@ use windows::Win32::{
             RAWINPUTHEADER, RIDEV_REMOVE, RIDI_DEVICENAME, RID_INPUT, RIM_TYPEMOUSE,
         },
         WindowsAndMessaging::{
-            AdjustWindowRectEx, DefWindowProcW, DispatchMessageW, GetCursorPos, GetSystemMetrics,
-            GetWindowInfo, GetWindowLongW, MessageBoxW, PeekMessageW, RegisterClassW, SetCursorPos,
-            SystemParametersInfoW, TranslateMessage, WindowFromPoint, CREATESTRUCTW, CS_DBLCLKS,
-            DLGC_WANTALLKEYS, FKF_CONFIRMHOTKEY, FKF_FILTERKEYSON, FKF_HOTKEYACTIVE, GWLP_USERDATA,
-            GWL_EXSTYLE, GWL_STYLE, HICON, HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCAPTION,
-            HTCLIENT, HTCLOSE, HTLEFT, HTMAXBUTTON, HTMINBUTTON, HTNOWHERE, HTRIGHT, HTSYSMENU,
-            HTTOP, HTTOPLEFT, HTTOPRIGHT, MB_ICONEXCLAMATION, MB_OK, MINMAXINFO, MSG,
-            NCCALCSIZE_PARAMS, PM_REMOVE, SC_MAXIMIZE, SC_RESTORE, SM_CXSCREEN, SM_CXVIRTUALSCREEN,
-            SM_CYSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SPI_GETWORKAREA,
-            SPI_SETFILTERKEYS, SPI_SETSTICKYKEYS, SPI_SETTOGGLEKEYS, SW_RESTORE, TKF_CONFIRMHOTKEY,
-            TKF_HOTKEYACTIVE, TKF_TOGGLEKEYSON, WINDOWINFO, WMSZ_BOTTOM, WMSZ_BOTTOMLEFT,
-            WMSZ_BOTTOMRIGHT, WMSZ_LEFT, WMSZ_RIGHT, WMSZ_TOP, WMSZ_TOPLEFT, WMSZ_TOPRIGHT,
-            WM_ACTIVATE, WM_ACTIVATEAPP, WM_CHAR, WM_CLOSE, WM_CREATE, WM_DESTROY, WM_DEVICECHANGE,
+            AdjustWindowRectEx, DefWindowProcW, DisableProcessWindowsGhosting, DispatchMessageW,
+            GetCursorPos, GetSystemMetrics, GetWindowInfo, GetWindowLongW, MessageBoxW,
+            PeekMessageW, RegisterClassW, SetCursorPos, SystemParametersInfoW, TranslateMessage,
+            WindowFromPoint, CREATESTRUCTW, CS_DBLCLKS, DLGC_WANTALLKEYS, FKF_CONFIRMHOTKEY,
+            FKF_FILTERKEYSON, FKF_HOTKEYACTIVE, GWLP_USERDATA, GWL_EXSTYLE, GWL_STYLE, HICON,
+            HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCAPTION, HTCLIENT, HTCLOSE, HTLEFT,
+            HTMAXBUTTON, HTMINBUTTON, HTNOWHERE, HTRIGHT, HTSYSMENU, HTTOP, HTTOPLEFT, HTTOPRIGHT,
+            MB_ICONEXCLAMATION, MB_OK, MINMAXINFO, MSG, NCCALCSIZE_PARAMS, PM_REMOVE, SC_MAXIMIZE,
+            SC_RESTORE, SM_CXSCREEN, SM_CXVIRTUALSCREEN, SM_CYSCREEN, SM_CYVIRTUALSCREEN,
+            SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SPI_GETWORKAREA, SPI_SETFILTERKEYS,
+            SPI_SETSTICKYKEYS, SPI_SETTOGGLEKEYS, SW_RESTORE, TKF_CONFIRMHOTKEY, TKF_HOTKEYACTIVE,
+            TKF_TOGGLEKEYSON, WINDOWINFO, WMSZ_BOTTOM, WMSZ_BOTTOMLEFT, WMSZ_BOTTOMRIGHT,
+            WMSZ_LEFT, WMSZ_RIGHT, WMSZ_TOP, WMSZ_TOPLEFT, WMSZ_TOPRIGHT, WM_ACTIVATE,
+            WM_ACTIVATEAPP, WM_CHAR, WM_CLOSE, WM_CREATE, WM_DESTROY, WM_DEVICECHANGE,
             WM_DISPLAYCHANGE, WM_DWMCOMPOSITIONCHANGED, WM_ENTERSIZEMOVE, WM_ERASEBKGND,
             WM_EXITSIZEMOVE, WM_GETDLGCODE, WM_GETMINMAXINFO, WM_IME_CHAR, WM_IME_COMPOSITION,
             WM_IME_ENDCOMPOSITION, WM_IME_NOTIFY, WM_IME_REQUEST, WM_IME_SETCONTEXT,
@@ -108,8 +101,7 @@ use winreg::RegKey;
 
 type IntPoint2 = Point2<i32>;
 
-//pub static mut WINDOWS_APPLICATION: Option<&'static Arc<WindowsApplication>> = None;
-//static INIT_APPLICATION: Once = Once::new();
+pub static mut WINDOWS_APPLICATION: OnceCell<Mutex<WindowsApplication>> = OnceCell::new();
 
 lazy_static! {
     static ref WINDOWS_MESSAGE_STRINGS: BTreeMap<u32, &'static str> = {
@@ -294,6 +286,15 @@ pub enum ModifierKey {
     Count = 7,
 }
 
+pub fn create_windows_application(
+    hinstance: HINSTANCE,
+    hicon: HICON,
+) -> &'static Mutex<WindowsApplication> {
+    unsafe {
+        WINDOWS_APPLICATION.get_or_init(|| Mutex::new(WindowsApplication::new(hinstance, hicon)))
+    }
+}
+
 /*pub fn create_windows_application(
     hinstance: HINSTANCE,
     hicon: HICON,
@@ -313,79 +314,126 @@ unsafe fn init_windows_application(hinstance: HINSTANCE, hicon: HICON) {
 #[derive(Debug, Clone)]
 pub struct WindowsApplication {
     cursor: Rc<WindowsCursor>,
+    minimized: bool,
     minimized_window_position: IntPoint2,
     instance_handle: HINSTANCE,
     using_high_precision_mouse_input: bool,
     is_mouse_attached: bool,
     force_activate_by_mouse: bool,
-    pub windows: Vec<Rc<WindowsWindow>>,
+    force_no_gamepads: bool,
+    consume_alt_space: bool,
+    //XInput( XInputInterface::Create( MessageHandler ) )
+    has_loaded_input_plugins: bool,
+    allowed_to_defer_message_processing: bool,
+    pub windows: RefCell<Vec<RefCell<WindowsWindow>>>,
     modifier_key_state: [bool; ModifierKey::Count as usize],
     in_modal_size_loop: bool,
     pub display_metrics: DisplayMetrics,
     //message_handlers: Vec<&dyn IWindowsMessageHandler>,
-    //startup_sticky_keys: STICKYKEYS,
-    //startup_toggle_keys: TOGGLEKEYS,
-    //startup_filter_keys: FILTERKEYS,
+    startup_sticky_keys: STICKYKEYS,
+    startup_toggle_keys: TOGGLEKEYS,
+    startup_filter_keys: FILTERKEYS,
 }
 
 impl WindowsApplication {
-    /*fn allow_accessibility_shortcut_keys(&mut self, allow_keys: bool) {
+    fn allow_accessibility_shortcut_keys(&mut self, allow_keys: bool) {
         unsafe {
             if allow_keys {
                 // Restore StickyKeys/etc to original state and enable Windows key
-                SystemParametersInfoW(SPI_SETSTICKYKEYS, mem::size_of::<STICKYKEYS>() as u32, &mut self.startup_sticky_keys as *mut _ as *mut c_void, 0);
-                SystemParametersInfoW(SPI_SETTOGGLEKEYS, mem::size_of::<TOGGLEKEYS>() as u32, &mut self.startup_toggle_keys as *mut _ as *mut c_void, 0);
-                SystemParametersInfoW(SPI_SETFILTERKEYS, mem::size_of::<FILTERKEYS>() as u32, &mut self.startup_filter_keys as *mut _ as *mut c_void, 0);
+                SystemParametersInfoW(
+                    SPI_SETSTICKYKEYS,
+                    mem::size_of::<STICKYKEYS>() as u32,
+                    &mut self.startup_sticky_keys as *mut _ as *mut c_void,
+                    0,
+                );
+                SystemParametersInfoW(
+                    SPI_SETTOGGLEKEYS,
+                    mem::size_of::<TOGGLEKEYS>() as u32,
+                    &mut self.startup_toggle_keys as *mut _ as *mut c_void,
+                    0,
+                );
+                SystemParametersInfoW(
+                    SPI_SETFILTERKEYS,
+                    mem::size_of::<FILTERKEYS>() as u32,
+                    &mut self.startup_filter_keys as *mut _ as *mut c_void,
+                    0,
+                );
             } else {
                 // Disable StickyKeys/etc shortcuts but if the accessibility feature is on,
                 // then leave the settings alone as its probably being usefully used
 
-                let mut sk_off = STICKYKEYS::default();
-                if (self.startup_sticky_keys.dwFlags & SKF_STICKYKEYSON) == 0 {
+                let mut sk_off = self.startup_sticky_keys;
+                if (sk_off.dwFlags & SKF_STICKYKEYSON) == 0 {
                     // Disable the hotkey and the confirmation
                     sk_off.dwFlags &= !SKF_HOTKEYACTIVE;
                     sk_off.dwFlags &= !SKF_CONFIRMHOTKEY;
 
-                    SystemParametersInfoW(SPI_SETSTICKYKEYS, mem::size_of::<STICKYKEYS>() as u32, &mut sk_off as *mut _ as *mut c_void, 0);
+                    SystemParametersInfoW(
+                        SPI_SETSTICKYKEYS,
+                        mem::size_of::<STICKYKEYS>() as u32,
+                        &mut sk_off as *mut _ as *mut c_void,
+                        0,
+                    );
                 }
 
-                let mut tk_off = TOGGLEKEYS::default();
-                if (self.startup_toggle_keys.dwFlags & TKF_TOGGLEKEYSON) == 0 {
+                let mut tk_off = self.startup_toggle_keys;
+                if (tk_off.dwFlags & TKF_TOGGLEKEYSON) == 0 {
                     // Disable the hotkey and the confirmation
                     tk_off.dwFlags &= !TKF_HOTKEYACTIVE;
                     tk_off.dwFlags &= !TKF_CONFIRMHOTKEY;
 
-                    SystemParametersInfoW(SPI_SETTOGGLEKEYS, mem::size_of::<TOGGLEKEYS>() as u32, &mut tk_off as *mut _ as *mut c_void, 0);
+                    SystemParametersInfoW(
+                        SPI_SETTOGGLEKEYS,
+                        mem::size_of::<TOGGLEKEYS>() as u32,
+                        &mut tk_off as *mut _ as *mut c_void,
+                        0,
+                    );
                 }
 
-                let mut fk_off = FILTERKEYS::default();
-                if (self.startup_filter_keys.dwFlags & FKF_FILTERKEYSON) == 0 {
+                let mut fk_off = self.startup_filter_keys;
+                if (fk_off.dwFlags & FKF_FILTERKEYSON) == 0 {
                     // Disable the hotkey and the confirmation
                     fk_off.dwFlags &= !FKF_HOTKEYACTIVE;
                     fk_off.dwFlags &= !FKF_CONFIRMHOTKEY;
 
-                    SystemParametersInfoW(SPI_SETFILTERKEYS, mem::size_of::<FILTERKEYS>() as u32, &mut fk_off as *mut _ as *mut c_void, 0);
+                    SystemParametersInfoW(
+                        SPI_SETFILTERKEYS,
+                        mem::size_of::<FILTERKEYS>() as u32,
+                        &mut fk_off as *mut _ as *mut c_void,
+                        0,
+                    );
                 }
             }
         }
-    }*/
+    }
     pub fn new(hinstance: HINSTANCE, hicon: HICON) -> WindowsApplication {
+        unsafe { DisableProcessWindowsGhosting() };
         let display_metrics = DisplayMetrics::new();
         let mut winapp = WindowsApplication {
             cursor: Rc::new(WindowsCursor::new()),
-            minimized_window_position: IntPoint2::new(-32000, -32000),
             instance_handle: hinstance,
+            minimized: false,
             using_high_precision_mouse_input: false,
             is_mouse_attached: false,
             force_activate_by_mouse: false,
-            windows: vec![],
-            modifier_key_state: [false; ModifierKey::Count as usize],
+            force_no_gamepads: false,
+            consume_alt_space: false,
+            //XInput( XInputInterface::Create( MessageHandler ) )
+            has_loaded_input_plugins: false,
+            allowed_to_defer_message_processing: true,
+            /* CVarDeferMessageProcessing(
+            TEXT( "Slate.DeferWindowsMessageProcessing" ),
+            bAllowedToDeferMessageProcessing,
+            TEXT( "Whether windows message processing is deferred until tick or if they are processed immediately" ) ) */
             in_modal_size_loop: false,
+            minimized_window_position: IntPoint2::new(-32000, -32000),
+            windows: RefCell::new(vec![]),
+            modifier_key_state: [false; ModifierKey::Count as usize],
             display_metrics: display_metrics,
             //message_handlers: vec![],
-            //startup_sticky_keys: STICKYKEYS,
-            //startup_toggle_keys: TOGGLEKEYS,
-            //startup_filter_keys: FILTERKEYS,
+            startup_sticky_keys: STICKYKEYS::default(),
+            startup_toggle_keys: TOGGLEKEYS::default(),
+            startup_filter_keys: FILTERKEYS::default(),
         };
         println!("Successfully created winapp");
         let class_registered = winapp.register_class(hinstance, hicon);
@@ -394,12 +442,12 @@ impl WindowsApplication {
         println!("winapp debug is {:#?}", winapp);
         winapp
     }
-    pub fn make_window(&self) -> Rc<WindowsWindow> {
+    pub fn make_window(&self) -> RefCell<WindowsWindow> {
         WindowsWindow::make()
     }
     pub fn initialize_window(
         &mut self,
-        in_window: &Rc<WindowsWindow>,
+        in_window: &RefCell<WindowsWindow>,
         in_definition: WindowDefinition,
         in_parent_window: &Option<Rc<WindowsWindow>>,
         show_immediately: bool,
@@ -411,9 +459,11 @@ impl WindowsApplication {
         } else {
             None
         };
-        self.windows.push(window);
-        let idx = self.windows.len() - 1;
-        Rc::make_mut(&mut self.windows[idx]).initialize(&self,
+        let mut windows_mut_borrow = self.windows.borrow_mut();
+        windows_mut_borrow.push(window);
+        let idx = windows_mut_borrow.len() - 1;
+        windows_mut_borrow[idx].borrow_mut().initialize(
+            &self,
             in_definition,
             self.instance_handle,
             parent_window,
@@ -473,9 +523,9 @@ impl WindowsApplication {
     //TODO the return signature for this method feels wrong.
     pub fn find_window_by_hwnd(
         &self,
-        windows_to_search: &Vec<Rc<WindowsWindow>>,
+        windows_to_search: &Vec<RefCell<WindowsWindow>>,
         handle_to_find: HWND,
-    ) -> Option<Rc<WindowsWindow>> {
+    ) -> Option<RefCell<WindowsWindow>> {
         println!(
             "Inside find_window_by_hwnd, handle_to_find is {:?}",
             handle_to_find
@@ -487,7 +537,7 @@ impl WindowsApplication {
                 break;
             }
             let window = &windows_to_search[n];
-            if window.get_hwnd() == handle_to_find {
+            if window.borrow().get_hwnd() == handle_to_find {
                 return Some(window.clone());
             }
             n += 1;
@@ -500,7 +550,7 @@ impl WindowsApplication {
             let got_point = GetCursorPos(&mut cursor_pos);
             if got_point.0 != 0 {
                 let hwnd: HWND = WindowFromPoint(cursor_pos);
-                let window_under_cursor = self.find_window_by_hwnd(&self.windows, hwnd);
+                let window_under_cursor = self.find_window_by_hwnd(&self.windows.borrow(), hwnd);
                 return window_under_cursor.is_some();
             }
         }
@@ -574,18 +624,19 @@ impl WindowsApplication {
             work_area
         }
     }
-    pub fn process_message(&mut self, hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> i32 {
+    pub fn process_message(&self, hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> i32 {
         println!("Reached inside process_message");
         unsafe {
             println!("hwnd is {:?}", hwnd);
             println!("WindowsApplication self address is {:p}", self);
+            let len = self.windows.borrow().len();
             println!(
                 "self.windows.len() is {}. about to find window by hwnd.",
-                self.windows.len()
+                len
             );
-            let current_native_event_window_opt = self.find_window_by_hwnd(&self.windows, hwnd);
+            let current_native_event_window_opt = self.find_window_by_hwnd(&self.windows.borrow(), hwnd);
 
-            if self.windows.len() != 0 && current_native_event_window_opt.is_some() {
+            if len != 0 && current_native_event_window_opt.is_some() {
                 println!(
                     "current_native_event_window_opt is some. Don't believe me? Look! {:#?}",
                     current_native_event_window_opt
@@ -598,7 +649,8 @@ impl WindowsApplication {
                             let mmi = mem::transmute::<LPARAM, *const MINMAXINFO>(lparam);
                             *mmi
                         };
-                        let windef = current_native_event_window.get_definition();
+                        let borrowed_wnd = current_native_event_window.borrow();
+                        let windef = borrowed_wnd.get_definition();
                         let ref size_limits: WindowSizeLimits = windef.size_limits;
 
                         // We need to inflate the max values if using an OS window border
@@ -705,7 +757,8 @@ impl WindowsApplication {
                         }
                     }
                     WM_NCCALCSIZE => {
-                        let windef = current_native_event_window.get_definition();
+                        let borrowed_wnd = current_native_event_window.borrow();
+                        let windef = borrowed_wnd.get_definition();
                         // Let windows absorb this message if using the standard border
                         if wparam != 0 && !windef.has_os_window_border {
                             // Borderless game windows are not actually borderless, they have a thick border that we simply draw game content over (client
@@ -714,7 +767,7 @@ impl WindowsApplication {
                             // window rect (including the border) sits inside the monitor. The size adjustments here will be sent to WM_MOVE and
                             // WM_SIZE and the window will still be considered maximized.
                             if windef.window_type == WindowType::GameWindow
-                                && current_native_event_window.is_maximized()
+                                && current_native_event_window.borrow().is_maximized()
                             {
                                 // Ask the system for the window border size as this is the amount that Windows will bleed our window over the edge
                                 // of our desired space. The value returned by current_native_event_window will be incorrect for our usage here as it
@@ -761,7 +814,8 @@ impl WindowsApplication {
                         }
                     }
                     WM_SIZING => {
-                        let windef = current_native_event_window.get_definition();
+                        let borrowed_wnd = current_native_event_window.borrow();
+                        let windef = borrowed_wnd.get_definition();
                         if windef.should_preserve_aspect_ratio {
                             // The rect we get in lparam is window rect, but we need to preserve client's aspect ratio,
                             // so we need to find what the border and title bar sizes are, if window has them and adjust the rect.
@@ -787,7 +841,8 @@ impl WindowsApplication {
                             rect.top -= test_rect.top;
                             rect.bottom -= test_rect.bottom;
 
-                            let aspect_ratio = current_native_event_window.get_aspect_ratio();
+                            let aspect_ratio =
+                                current_native_event_window.borrow().get_aspect_ratio();
                             let new_width = rect.right - rect.left;
                             let new_height = rect.bottom - rect.top;
 
@@ -830,10 +885,48 @@ impl WindowsApplication {
                             return 1;
                         }
                     }
+                    WM_SHOWWINDOW => {
+                        self.defer_message(
+                            &current_native_event_window,
+                            hwnd,
+                            msg,
+                            wparam,
+                            lparam,
+                            0,
+                            0,
+                            0,
+                        );
+                    }
+                    WM_ERASEBKGND => {
+                        // Intercept background erasing to eliminate flicker.
+                        // Return non-zero to indicate that we'll handle the erasing ourselves
+                        return 1;
+                    }
+                    WM_NCACTIVATE => {
+                        if !current_native_event_window
+                            .borrow()
+                            .get_definition()
+                            .has_os_window_border
+                        {
+                            // Unless using the OS window border, intercept calls to prevent non-client area drawing a border upon activation or deactivation
+                            // Return true to ensure standard activation happens
+                            return 1;
+                        }
+                    }
+                    WM_NCPAINT => {
+                        if !current_native_event_window
+                            .borrow()
+                            .get_definition()
+                            .has_os_window_border
+                        {
+                            // Unless using the OS window border, intercept calls to draw the non-client area - we do this ourselves
+                            return 0;
+                        }
+                    }
                     WM_DESTROY => {
                         println!("about to delete references to windows after WM_DESTROY. Mutable borrow here.");
-                        self.windows
-                            .retain(|ref x| Rc::ptr_eq(*x, &current_native_event_window) == false);
+                        self.windows.borrow_mut()
+                            .retain(|ref x| x != &&current_native_event_window);
                         return 0;
                     }
                     _ => {}
@@ -950,17 +1043,17 @@ impl WindowsApplication {
     fn update_all_modifier_key_states(&mut self) {
         unsafe {
             self.modifier_key_state[ModifierKey::LeftShift as usize] =
-                (GetAsyncKeyState(VK_LSHIFT.into()) & 0x8000) != 0;
+                (GetAsyncKeyState(VK_LSHIFT.into()) as u16 & 0x8000) != 0;
             self.modifier_key_state[ModifierKey::RightShift as usize] =
-                (GetAsyncKeyState(VK_RSHIFT.into()) & 0x8000) != 0;
+                (GetAsyncKeyState(VK_RSHIFT.into()) as u16 & 0x8000) != 0;
             self.modifier_key_state[ModifierKey::LeftControl as usize] =
-                (GetAsyncKeyState(VK_LCONTROL.into()) & 0x8000) != 0;
+                (GetAsyncKeyState(VK_LCONTROL.into()) as u16 & 0x8000) != 0;
             self.modifier_key_state[ModifierKey::RightControl as usize] =
-                (GetAsyncKeyState(VK_RCONTROL.into()) & 0x8000) != 0;
+                (GetAsyncKeyState(VK_RCONTROL.into()) as u16 & 0x8000) != 0;
             self.modifier_key_state[ModifierKey::LeftAlt as usize] =
-                (GetAsyncKeyState(VK_LMENU.into()) & 0x8000) != 0;
+                (GetAsyncKeyState(VK_LMENU.into()) as u16 & 0x8000) != 0;
             self.modifier_key_state[ModifierKey::RightAlt as usize] =
-                (GetAsyncKeyState(VK_RMENU.into()) & 0x8000) != 0;
+                (GetAsyncKeyState(VK_RMENU.into()) as u16 & 0x8000) != 0;
             self.modifier_key_state[ModifierKey::CapsLock as usize] =
                 (GetKeyState(VK_CAPITAL.into()) & 0x0001) != 0;
         }
@@ -972,9 +1065,14 @@ impl WindowsApplication {
         wparam: WPARAM,
         lparam: LPARAM,
     ) -> LRESULT {
-        unsafe {
-            Self::process_message(hwnd, msg, wparam, lparam) as isize
-        }
+        println!("Got in here with the global shit");
+        (unsafe {
+            WINDOWS_APPLICATION
+                .get()
+                .unwrap()
+                .lock()
+                .process_message(hwnd, msg, wparam, lparam)
+        }) as isize
     }
     pub fn pump_messages(&self, time_delta: f32) {
         unsafe {
@@ -1007,7 +1105,7 @@ impl WindowsApplication {
     }
     fn defer_message(
         &self,
-        native_window: &Rc<WindowsWindow>,
+        native_window: &RefCell<WindowsWindow>,
         in_hwnd: HWND,
         in_message: u32,
         in_wparam: WPARAM,
@@ -1018,7 +1116,7 @@ impl WindowsApplication {
     ) {
     }
     /*fn add_message_handler(&mut self, in_message_handler: &dyn IWindowsMessageHandler) {
-        if !self.message_handlers.contains(&in_message_handler) 
+        if !self.message_handlers.contains(&in_message_handler)
         self.message_handlers.push(in_message_handler);
     }*/
 }

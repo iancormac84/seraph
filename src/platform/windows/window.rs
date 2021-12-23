@@ -7,7 +7,7 @@ use crate::windows::application::WindowsApplication;
 use crate::windows::utils::ToWide;
 use std::borrow::Borrow;
 use std::{
-    cell::Cell,
+    cell::{Cell, RefCell},
     cmp, fmt, io, mem,
     os::raw::c_void,
     ptr,
@@ -56,7 +56,7 @@ use windows::Win32::{
 pub const APP_WINDOW_CLASS: &'static str = "CormacWindow";
 
 //TODO can I make this capable of clone? I want to try this so I don't have to do a clone in the WindowsApplication::find_window_by_hwnd method.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct WindowsWindow {
     pub app_window_class: &'static str,
     pub owning_application: Weak<WindowsApplication>,
@@ -79,37 +79,49 @@ pub struct WindowsWindow {
     definition: WindowDefinition,
 }
 
-impl fmt::Debug for WindowsWindow {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let pre_fullscreen_window_placement = format!("WINDOWPLACEMENT {{ length: {}, flags: {}, showCmd: {}, ptMinPosition: POINT {{ x: {}, y: {} }}, ptMaxPosition: POINT {{ x: {}, y: {} }}, rcNormalPosition: RECT {{ left: {}, top: {}, right: {}, bottom: {} }} }}", &self.pre_fullscreen_window_placement.length, &self.pre_fullscreen_window_placement.flags, &self.pre_fullscreen_window_placement.showCmd, &self.pre_fullscreen_window_placement.ptMinPosition.x, &self.pre_fullscreen_window_placement.ptMinPosition.y, &self.pre_fullscreen_window_placement.ptMaxPosition.x, &self.pre_fullscreen_window_placement.ptMaxPosition.y, &self.pre_fullscreen_window_placement.rcNormalPosition.left, &self.pre_fullscreen_window_placement.rcNormalPosition.top, &self.pre_fullscreen_window_placement.rcNormalPosition.right, &self.pre_fullscreen_window_placement.rcNormalPosition.bottom);
-        let pre_parent_minimized_window_placement = format!("WINDOWPLACEMENT {{ length: {}, flags: {}, showCmd: {}, ptMinPosition: POINT {{ x: {}, y: {} }}, ptMaxPosition: POINT {{ x: {}, y: {} }}, rcNormalPosition: RECT {{ left: {}, top: {}, right: {}, bottom: {} }} }}", &self.pre_parent_minimized_window_placement.length, &self.pre_parent_minimized_window_placement.flags, &self.pre_parent_minimized_window_placement.showCmd, &self.pre_parent_minimized_window_placement.ptMinPosition.x, &self.pre_parent_minimized_window_placement.ptMinPosition.y, &self.pre_parent_minimized_window_placement.ptMaxPosition.x, &self.pre_parent_minimized_window_placement.ptMaxPosition.y, &self.pre_parent_minimized_window_placement.rcNormalPosition.left, &self.pre_parent_minimized_window_placement.rcNormalPosition.top, &self.pre_parent_minimized_window_placement.rcNormalPosition.right, &self.pre_parent_minimized_window_placement.rcNormalPosition.bottom);
-        f.debug_struct("WindowsWindow")
-            .field("app_window_class", &self.app_window_class)
-            .field("owning_application", &self.owning_application)
-            .field("hwnd", &self.hwnd)
-            .field("region_height", &self.region_height)
-            .field("region_width", &self.region_width)
-            .field("window_mode", &self.window_mode)
-            .field("ole_reference_count", &self.ole_reference_count)
-            .field(
-                "pre_fullscreen_window_placement",
-                &pre_fullscreen_window_placement,
-            )
-            .field(
-                "pre_parent_minimized_window_placement",
-                &pre_parent_minimized_window_placement,
-            )
-            .field("virtual_height", &self.virtual_height)
-            .field("virtual_width", &self.virtual_width)
-            .field("aspect_ratio", &self.aspect_ratio)
-            .field("is_visible", &self.is_visible)
-            .field("is_first_time_visible", &self.is_first_time_visible)
-            .field("initially_minimized", &self.initially_minimized)
-            .field("initially_maximized", &self.initially_maximized)
-            .field("dpi_scale_factor", &self.dpi_scale_factor)
-            .field("handle_manual_dpi_changes", &self.handle_manual_dpi_changes)
-            .field("definition", &self.definition)
-            .finish()
+impl PartialEq<WindowsWindow> for WindowsWindow {
+    fn eq(&self, other: &WindowsWindow) -> bool {
+        self.app_window_class == other.app_window_class
+            && self.hwnd == other.hwnd
+            && self.region_height == other.region_height
+            && self.region_width == other.region_width
+            && self.window_mode == other.window_mode
+            && self.ole_reference_count == other.ole_reference_count
+            && self.pre_fullscreen_window_placement == other.pre_fullscreen_window_placement
+            && self.pre_parent_minimized_window_placement
+                == other.pre_parent_minimized_window_placement
+            && self.virtual_height == other.virtual_height
+            && self.virtual_width == other.virtual_width
+            && self.aspect_ratio == other.aspect_ratio
+            && self.is_visible == other.is_visible
+            && self.is_first_time_visible == other.is_first_time_visible
+            && self.initially_minimized == other.initially_minimized
+            && self.initially_maximized == other.initially_maximized
+            && self.dpi_scale_factor == other.dpi_scale_factor
+            && self.handle_manual_dpi_changes == other.handle_manual_dpi_changes
+            && self.definition == other.definition
+    }
+
+    fn ne(&self, other: &WindowsWindow) -> bool {
+        self.app_window_class != other.app_window_class
+            && self.hwnd != other.hwnd
+            && self.region_height != other.region_height
+            && self.region_width != other.region_width
+            && self.window_mode != other.window_mode
+            && self.ole_reference_count != other.ole_reference_count
+            && self.pre_fullscreen_window_placement != other.pre_fullscreen_window_placement
+            && self.pre_parent_minimized_window_placement
+                != other.pre_parent_minimized_window_placement
+            && self.virtual_height != other.virtual_height
+            && self.virtual_width != other.virtual_width
+            && self.aspect_ratio != other.aspect_ratio
+            && self.is_visible != other.is_visible
+            && self.is_first_time_visible != other.is_first_time_visible
+            && self.initially_minimized != other.initially_minimized
+            && self.initially_maximized != other.initially_maximized
+            && self.dpi_scale_factor != other.dpi_scale_factor
+            && self.handle_manual_dpi_changes != other.handle_manual_dpi_changes
+            && self.definition != other.definition
     }
 }
 
@@ -143,9 +155,9 @@ impl WindowsWindow {
             }
         }
     }
-    pub fn make() -> Rc<WindowsWindow> {
+    pub fn make() -> RefCell<WindowsWindow> {
         println!("WindowsWindow::make");
-        Rc::new(WindowsWindow::new())
+        RefCell::new(WindowsWindow::new())
     }
     pub fn initialize(
         &mut self,
@@ -178,7 +190,9 @@ impl WindowsWindow {
         let mut window_width = client_width;
         let mut window_height = client_height;
 
-        let application_supports_per_pixel_blending = in_windows_application.get_window_transparency_support() == WindowTransparency::PerPixel;
+        let application_supports_per_pixel_blending = in_windows_application
+            .get_window_transparency_support()
+            == WindowTransparency::PerPixel;
 
         if !self.definition.has_os_window_border {
             window_ex_style = WS_EX_WINDOWEDGE;
@@ -244,14 +258,8 @@ impl WindowsWindow {
 
         //TODO: parent window may be null, but I'm using Rc to hold parent window, which I think implies that parent window can't be null. Fix.
         println!("WindowsWindow self is {:p}", self);
-        //let len = Weak::upgrade(&self.owning_application).unwrap().borrow().windows.len();
-        //println!("The vec len is {}", len);
         println!("self debug is {:#?}", self);
         println!("self.hwnd is {:?}", self.hwnd.get());
-        println!(
-            "self.owning_application is {:p}",
-            &Weak::upgrade(&self.owning_application)
-        );
         self.hwnd.set(
             match create_window(
                 window_ex_style,
@@ -339,7 +347,7 @@ impl WindowsWindow {
                 if application_supports_per_pixel_blending
                     && self.definition.transparency_support == WindowTransparency::PerPixel
                 {
-                    let mut margins = MARGINS {
+                    let margins = MARGINS {
                         cxLeftWidth: -1,
                         cxRightWidth: -1,
                         cyTopHeight: -1,
@@ -386,13 +394,14 @@ impl WindowsWindow {
     pub fn get_hwnd(&self) -> HWND {
         self.hwnd.get()
     }
-    pub fn make_window_region_object(&self) -> HRGN {
-        let mut region: HRGN;
+    pub fn make_window_region_object(&self, include_border_when_maximized: bool) -> HRGN {
+        let region: HRGN;
         if self.region_width.get() != -1 && self.region_height.get() != -1 {
+            let is_borderless_game_window = self.get_definition().window_type
+                == WindowType::GameWindow
+                && !self.get_definition().has_os_window_border;
             if self.is_maximized() {
-                if self.definition.window_type == WindowType::GameWindow
-                    && !self.definition.has_os_window_border
-                {
+                if is_borderless_game_window {
                     // Windows caches the cxWindowBorders size at window creation. Even if borders are removed or resized Windows will continue to use this value when evaluating regions
                     // and sizing windows. When maximized this means that our window position will be offset from the screen origin by (-cxWindowBorders,-cxWindowBorders). We want to
                     // display only the region within the maximized screen area, so offset our upper left and lower right by cxWindowBorders.
@@ -401,15 +410,24 @@ impl WindowsWindow {
                         window_info.cbSize = mem::size_of::<WINDOWINFO>() as u32;
                         GetWindowInfo(self.hwnd.get(), &mut window_info);
 
+                        let window_border_size = if include_border_when_maximized {
+                            window_info.cxWindowBorders as i32
+                        } else {
+                            0
+                        };
                         region = CreateRectRgn(
-                            window_info.cxWindowBorders as i32,
-                            window_info.cxWindowBorders as i32,
-                            self.region_width.get() + window_info.cxWindowBorders as i32,
-                            self.region_height.get() + window_info.cxWindowBorders as i32,
+                            window_border_size,
+                            window_border_size,
+                            self.region_width.get() + window_border_size,
+                            self.region_height.get() + window_border_size,
                         );
                     }
                 } else {
-                    let window_border_size = self.get_window_border_size();
+                    let window_border_size = if include_border_when_maximized {
+                        self.get_window_border_size()
+                    } else {
+                        0
+                    };
                     unsafe {
                         region = CreateRectRgn(
                             window_border_size as i32,
@@ -421,9 +439,12 @@ impl WindowsWindow {
                 }
             } else {
                 let use_corner_radius = self.window_mode == WindowMode::Windowed
+                    && !is_borderless_game_window
+                    // Corner radii cause DWM window composition blending to fail, so we always set regions to full size rectangles
                     && self.definition.transparency_support != WindowTransparency::PerPixel
                     && self.definition.corner_radius > 0;
                 if use_corner_radius {
+                    // CreateRoundRectRgn gives you a duff region that's 1 pixel smaller than you ask for. CreateRectRgn behaves correctly.
                     unsafe {
                         region = CreateRoundRectRgn(
                             0,
@@ -458,7 +479,7 @@ impl WindowsWindow {
     pub fn adjust_window_region(&self, width: i32, height: i32) {
         self.region_width.set(width);
         self.region_height.set(height);
-        let region = self.make_window_region_object();
+        let region = self.make_window_region_object(true);
         unsafe {
             if SetWindowRgn(self.hwnd.get(), region, false) == 0 {
                 println!("Warning: {}", io::Error::last_os_error());
@@ -978,13 +999,12 @@ impl GenericWindow for WindowsWindow {
         unsafe { EnableWindow(self.hwnd.get(), if enable { BOOL(1) } else { BOOL(0) }) };
     }
     fn is_point_in_window(&self, x: i32, y: i32) -> bool {
-        let mut result = false;
-        let region = self.make_window_region_object();
-        let res = unsafe { !!PtInRegion(region, x, y).0 == 1 };
+        let region = self.make_window_region_object(false);
+        let result = unsafe { !!PtInRegion(region, x, y).0 != 0 };
         unsafe {
             DeleteObject(region);
         }
-        result == res
+        result
     }
     fn get_window_border_size(&self) -> u32 {
         if self.definition.window_type == WindowType::GameWindow
@@ -1079,8 +1099,6 @@ impl GenericWindow for WindowsWindow {
                 flash_info.dwFlags = FLASHW_TRAY | FLASHW_TIMERNOFG
             }
             WindowDrawAttentionRequestType::Stop => flash_info.dwFlags = FLASHW_STOP,
-            _ => unreachable!("Invalid request type {:?}", parameters),
-            //ensureMsgf(false, TEXT("FWindowsWindow::DrawAttention(): Invalid request type %d"), static_cast<int32>(Parameters.RequestType));
         }
 
         unsafe { FlashWindowEx(&flash_info) };
@@ -1105,6 +1123,7 @@ fn create_window(
     instance: HINSTANCE,
     param: *const c_void,
 ) -> io::Result<HWND> {
+    println!("Inside create_window");
     match unsafe {
         CreateWindowExW(
             ex_style,
@@ -1121,7 +1140,10 @@ fn create_window(
             param,
         )
     } {
-        v if v == 0 => Err(io::Error::last_os_error()),
+        v if v == 0 => {
+            println!("Well, looks like we got an error, buddy!");
+            Err(io::Error::last_os_error())
+        },
         v => Ok(v),
     }
 }
