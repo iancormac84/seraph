@@ -53,9 +53,8 @@ fn main() {
     let application = create_windows_application(inst_handle, icon.0);
     println!("Made application. address is {:p}", application);
     println!("Also, application debug is {:#?}", &*application);
-    let mut app_lock = application.lock();
-    let rc_window = app_lock.make_window();
-    app_lock.initialize_window(&rc_window, wd, &None, true);
+    let rc_window = application.make_window();
+    application.initialize_window(&rc_window, wd, &None, true);
     rc_window.borrow().show();
-    app_lock.pump_messages(0.0);
+    application.pump_messages(0.0);
 }

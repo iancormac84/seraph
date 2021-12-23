@@ -10,13 +10,11 @@ use crate::generic::window::GenericWindow;
 use crate::generic::window_definition::{WindowDefinition, WindowTransparency, WindowType};
 use crate::windows::cursor::WindowsCursor;
 use crate::windows::utils::ToWide;
+use crate::windows::utils;
 use crate::windows::window::{WindowsWindow, APP_WINDOW_CLASS};
 use crate::windows::xinputinterface::XInputInterface;
 use lazy_static::lazy_static;
-use once_cell::sync::OnceCell;
-use parking_lot::Mutex;
-use std::borrow::Borrow;
-use std::{cell::RefCell, collections::BTreeMap, io::Error, mem, os::raw::c_void, ptr, rc::Rc};
+use std::{cell::RefCell, collections::BTreeMap, io::Error, mem, os::raw::c_void, ptr, rc::Rc, sync::{Arc, Once}};
 
 use windows::Win32::{
     Devices::{
@@ -101,7 +99,8 @@ use winreg::RegKey;
 
 type IntPoint2 = Point2<i32>;
 
-pub static mut WINDOWS_APPLICATION: OnceCell<Mutex<WindowsApplication>> = OnceCell::new();
+pub static mut WINDOWS_APPLICATION: Option<&'static Arc<WindowsApplication>> = None;
+pub static INIT_APPLICATION: Once = Once::new();
 
 lazy_static! {
     static ref WINDOWS_MESSAGE_STRINGS: BTreeMap<u32, &'static str> = {
@@ -289,15 +288,6 @@ pub enum ModifierKey {
 pub fn create_windows_application(
     hinstance: HINSTANCE,
     hicon: HICON,
-) -> &'static Mutex<WindowsApplication> {
-    unsafe {
-        WINDOWS_APPLICATION.get_or_init(|| Mutex::new(WindowsApplication::new(hinstance, hicon)))
-    }
-}
-
-/*pub fn create_windows_application(
-    hinstance: HINSTANCE,
-    hicon: HICON,
 ) -> &'static Arc<WindowsApplication> {
     INIT_APPLICATION.call_once(|| unsafe { init_windows_application(hinstance, hicon) });
     unsafe { WINDOWS_APPLICATION.unwrap() }
@@ -305,10 +295,10 @@ pub fn create_windows_application(
 
 unsafe fn init_windows_application(hinstance: HINSTANCE, hicon: HICON) {
     let windows_application = WindowsApplication::new(hinstance, hicon);
-    let mut app = utils::leak(Arc::new(windows_application));
+    let app = utils::leak(Arc::new(windows_application));
     println!("app address is {:p}", &app);
     WINDOWS_APPLICATION = Some(app);
-}*/
+}
 
 //TODO implement GenericApplication trait. Also most likely trait based on IForceFeedbackSystem.
 #[derive(Debug, Clone)]
@@ -446,7 +436,7 @@ impl WindowsApplication {
         WindowsWindow::make()
     }
     pub fn initialize_window(
-        &mut self,
+        &self,
         in_window: &RefCell<WindowsWindow>,
         in_definition: WindowDefinition,
         in_parent_window: &Option<Rc<WindowsWindow>>,
@@ -459,7 +449,16 @@ impl WindowsApplication {
         } else {
             None
         };
+        window.borrow_mut().initialize(
+            &self,
+            in_definition,
+            self.instance_handle,
+            parent_window,
+            show_immediately,
+        );
         let mut windows_mut_borrow = self.windows.borrow_mut();
+        windows_mut_borrow.push(window);
+        /*let mut windows_mut_borrow = self.windows.borrow_mut();
         windows_mut_borrow.push(window);
         let idx = windows_mut_borrow.len() - 1;
         windows_mut_borrow[idx].borrow_mut().initialize(
@@ -468,7 +467,7 @@ impl WindowsApplication {
             self.instance_handle,
             parent_window,
             show_immediately,
-        );
+        );*/
     }
     fn register_class(&self, hinstance: HINSTANCE, hicon: HICON) -> bool {
         unsafe {
@@ -1065,12 +1064,10 @@ impl WindowsApplication {
         wparam: WPARAM,
         lparam: LPARAM,
     ) -> LRESULT {
-        println!("Got in here with the global shit");
+        println!("Got in here with the globals");
         (unsafe {
             WINDOWS_APPLICATION
-                .get()
                 .unwrap()
-                .lock()
                 .process_message(hwnd, msg, wparam, lparam)
         }) as isize
     }
