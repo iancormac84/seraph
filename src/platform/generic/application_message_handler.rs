@@ -1,5 +1,5 @@
 use crate::generic::window::GenericWindow;
-use cgmath::{Vector2, Vector3};
+use glam::{Vec2, Vec3};
 use std::rc::Rc;
 
 pub enum MouseButtons {
@@ -262,19 +262,19 @@ pub trait ApplicationMessageHandler {
         &self,
         window: &Rc<dyn GenericWindow>,
         button: MouseButtons,
-        cursor_pos: Vector2<f32>,
+        cursor_pos: Vec2,
     ) -> bool;
     fn on_mouse_up(&self, button: MouseButtons) -> bool;
-    fn on_mouse_up_with_cursor_pos(&self, button: MouseButtons, cursor_pos: Vector2<f32>) -> bool;
+    fn on_mouse_up_with_cursor_pos(&self, button: MouseButtons, cursor_pos: Vec2) -> bool;
     fn on_mouse_double_click(&self, window: &Rc<dyn GenericWindow>, button: MouseButtons) -> bool;
     fn on_mouse_double_click_with_cursor_pos(
         &self,
         window: &Rc<dyn GenericWindow>,
         button: MouseButtons,
-        cursor_pos: Vector2<f32>,
+        cursor_pos: Vec2,
     ) -> bool;
     fn on_mouse_wheel(&self, delta: f32) -> bool;
-    fn on_mouse_wheel_with_cursor_pos(&self, delta: f32, cursor_pos: Vector2<f32>) -> bool;
+    fn on_mouse_wheel_with_cursor_pos(&self, delta: f32, cursor_pos: Vec2) -> bool;
     fn on_mouse_move(&self) -> bool;
     fn on_raw_mouse_move(&self, x: i32, y: i32) -> bool;
     fn on_cursor_set(&self) -> bool;
@@ -300,7 +300,7 @@ pub trait ApplicationMessageHandler {
     fn on_touch_gesture(
         &self,
         gesture_type: GestureEvent,
-        delta: Vector2<f32>,
+        delta: Vec2,
         wheel_delta: f32,
         is_direction_inverted_from_device: bool,
     ) -> bool;
@@ -308,18 +308,18 @@ pub trait ApplicationMessageHandler {
     fn on_touch_started(
         &self,
         window: &Rc<dyn GenericWindow>,
-        location: Vector2<f32>,
+        location: Vec2,
         touch_index: i32,
         controller_id: i32,
     ) -> bool;
-    fn on_touch_moved(&self, location: Vector2<f32>, touch_index: i32, controller_id: i32) -> bool;
-    fn on_touch_ended(&self, location: Vector2<f32>, touch_index: i32, controller_id: i32) -> bool;
+    fn on_touch_moved(&self, location: Vec2, touch_index: i32, controller_id: i32) -> bool;
+    fn on_touch_ended(&self, location: Vec2, touch_index: i32, controller_id: i32) -> bool;
     fn on_motion_detected(
         &self,
-        tilt: Vector3<f32>,
-        rotation_rate: Vector3<f32>,
-        gravity: Vector3<f32>,
-        acceleration: Vector3<f32>,
+        tilt: Vec3,
+        rotation_rate: Vec3,
+        gravity: Vec3,
+        acceleration: Vec3,
         controller_id: i32,
     ) -> bool;
     fn on_size_changed(

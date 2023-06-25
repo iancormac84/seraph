@@ -3,7 +3,7 @@ use crate::{
     generic::cursor::{ICursor, MouseCursor, TagRect},
     platform::windows::utils::ToWide,
 };
-use cgmath::Vector2;
+use glam::Vector2;
 use std::path::Path;
 use windows::Win32::{
     Foundation::{POINT, PWSTR, RECT},
@@ -30,7 +30,7 @@ impl WindowsCursor {
         let mut cursor_override_handles = [0; 15];
         unsafe {
             for i in 0..15 {
-                let mut cursor_handle: HCURSOR = 0;
+                let mut cursor_handle = HCURSOR::default();
                 match MouseCursor::from_usize(i) {
                     MouseCursor::None | MouseCursor::Custom => {}
                     MouseCursor::Default => {

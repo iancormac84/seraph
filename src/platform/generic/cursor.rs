@@ -1,5 +1,5 @@
 use crate::core::math::color::Color;
-use cgmath::Vector2;
+use glam::Vec2;
 use std::{ffi::c_void, path::Path};
 
 pub trait TagRect {}
@@ -99,7 +99,7 @@ pub trait ICursor {
     /** Creates a hardware cursor from file. Can return None when not available. */
     fn create_cursor_from_file<P: AsRef<Path>>(
         path_to_cursor_without_extension: P,
-        hotspot: Vector2<f32>,
+        hotspot: Vec2,
     ) -> Option<Self>
     where
         Self: Sized;
@@ -112,13 +112,13 @@ pub trait ICursor {
         pixels: Color,
         width: i32,
         height: i32,
-        hotspot: Vector2<f32>,
+        hotspot: Vec2,
     ) -> Option<Self>
     where
         Self: Sized;
 
     /** The position of the cursor */
-    fn get_position(&self) -> Vector2<f32>;
+    fn get_position(&self) -> Vec2;
 
     /** Sets the position of the cursor */
     fn set_position(&mut self, x: i32, y: i32);

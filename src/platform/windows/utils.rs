@@ -2,9 +2,9 @@ use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
 use std::{io, mem};
 use windows::Win32::{
-    Foundation::{GetLastError, SetLastError, HWND},
+    Foundation::{GetLastError, SetLastError, HWND, WIN32_ERROR},
     UI::WindowsAndMessaging::{
-        GetWindowLongPtrW, GetWindowLongW, SetWindowLongPtrW, SetWindowLongW,
+        GetWindowLongPtrW, GetWindowLongW, SetWindowLongPtrW, SetWindowLongW, WINDOW_LONG_PTR_INDEX,
     },
 };
 
@@ -47,10 +47,10 @@ pub unsafe fn get_window_long_ptr<T>(wnd: HWND, index: i32) -> io::Result<*const
     use GetWindowLongPtrW as GetWindowLongPtr;
 
     // Clear so that we can distinguish from "success, and the value was zero" and "failure".
-    SetLastError(0);
+    SetLastError(WIN32_ERROR(0));
 
-    match GetWindowLongPtr(wnd, index) {
-        0 if GetLastError() == 0 => {
+    match GetWindowLongPtr(wnd, WINDOW_LONG_PTR_INDEX(index)) {
+        0 if GetLastError() == WIN32_ERROR(0) => {
             println!("Last error: {}", io::Error::last_os_error());
             Ok(0usize as *const T)
         }
@@ -71,12 +71,12 @@ pub unsafe fn set_window_long_ptr<T>(
     use SetWindowLongPtrW as SetWindowLongPtr;
 
     // Clear so that we can distinguish from "success, and the last value was zero" and "failure".
-    SetLastError(0);
+    SetLastError(WIN32_ERROR(0));
 
     let new_long = new_long as isize;
 
-    match SetWindowLongPtr(wnd, index, new_long) {
-        0 if GetLastError() == 0 => Ok(0usize as *const T),
+    match SetWindowLongPtr(wnd, WINDOW_LONG_PTR_INDEX(index), new_long) {
+        0 if GetLastError() == WIN32_ERROR(0) => Ok(0usize as *const T),
         0 => Err(io::Error::last_os_error()),
         v => Ok(v as *const T),
     }

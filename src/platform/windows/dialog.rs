@@ -1,8 +1,11 @@
 use crate::windows::utils::ToWide;
 use std::{io, ptr};
-use windows::Win32::{
-    Foundation::{HWND, PWSTR},
-    UI::WindowsAndMessaging::MessageBoxW,
+use windows::{
+    core::PCWSTR,
+    Win32::{
+        Foundation::HWND,
+        UI::WindowsAndMessaging::{MessageBoxW, MESSAGEBOX_RESULT, MESSAGEBOX_STYLE},
+    },
 };
 
 #[derive(Debug)]
@@ -18,10 +21,10 @@ pub enum MessageBoxResult {
     Continue = 11,
 }
 
-impl TryFrom<i32> for MessageBoxResult {
+impl TryFrom<MESSAGEBOX_RESULT> for MessageBoxResult {
     type Error = io::Error;
-    fn try_from(value: i32) -> Result<Self, Self::Error> {
-        match value {
+    fn try_from(value: MESSAGEBOX_RESULT) -> Result<Self, Self::Error> {
+        match value.0 {
             3 => Ok(MessageBoxResult::Abort),
             2 => Ok(MessageBoxResult::Cancel),
             11 => Ok(MessageBoxResult::Continue),
@@ -32,7 +35,7 @@ impl TryFrom<i32> for MessageBoxResult {
             10 => Ok(MessageBoxResult::TryAgain),
             6 => Ok(MessageBoxResult::Yes),
             _ => {
-                let msg = format!("unexpected message box result {}", value);
+                let msg = format!("unexpected message box result {}", value.0);
                 Err(io::Error::new(io::ErrorKind::Other, &msg[..]))
             }
         }
@@ -46,14 +49,14 @@ pub fn message_box(
     type_: Option<u32>,
 ) -> io::Result<MessageBoxResult> {
     unsafe {
-        let wnd = wnd.unwrap_or(0);
+        let wnd = wnd.unwrap_or(HWND(0));
         let mut text = text.to_wide_null();
-        let text = text.as_mut_ptr();
+        let text = text.as_ptr();
         let caption = caption.map(|v| v.to_wide_null());
         let caption = caption.as_ref().map(|v| v.as_ptr()).unwrap_or(ptr::null());
         let type_ = type_.unwrap_or(0);
-        match MessageBoxW(wnd, PWSTR(text), PWSTR(caption as *mut u16), type_) {
-            0 => Err(io::Error::last_os_error()),
+        match MessageBoxW(wnd, PCWSTR(text), PCWSTR(caption), MESSAGEBOX_STYLE(type_)) {
+            MESSAGEBOX_RESULT(0) => Err(io::Error::last_os_error()),
             v => Ok(MessageBoxResult::try_from(v)?),
         }
     }

@@ -4,7 +4,7 @@ use crate::generic::application::{
 use crate::generic::application_message_handler::{
     ApplicationMessageHandler, WindowAction, WindowSizeLimits, WindowZone,
 };
-use cgmath::Point2;
+use glam::Point2;
 //use crate::generic::cursor::ICursor;
 use crate::generic::window::GenericWindow;
 use crate::generic::window_definition::{WindowDefinition, WindowTransparency, WindowType};
@@ -12,95 +12,99 @@ use crate::windows::cursor::WindowsCursor;
 use crate::windows::utils;
 use crate::windows::utils::ToWide;
 use crate::windows::window::{WindowsWindow, APP_WINDOW_CLASS};
-use crate::windows::xinputinterface::XInputInterface;
 use lazy_static::lazy_static;
 use std::borrow::Borrow;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::io::Error;
-use std::mem::MaybeUninit;
 use std::os::raw::c_void;
-use std::rc::{Rc, Weak};
-use std::sync::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
+use std::rc::Rc;
 use std::sync::{Arc, Once};
 use std::{mem, ptr};
 
-use windows::Win32::{
-    Devices::{
-        DeviceAndDriverInstallation::{
-            CM_Get_Device_IDW, SetupDiDestroyDeviceInfoList, SetupDiEnumDeviceInfo,
-            SetupDiGetClassDevsExW, SetupDiOpenDevRegKey, CR_SUCCESS, DICS_FLAG_GLOBAL,
-            DIGCF_PRESENT, DIREG_DEV, GUID_DEVCLASS_MONITOR, MAX_DEVICE_ID_LEN, SP_DEVINFO_DATA,
-        },
-        Display::DEVINFO,
-        HumanInterfaceDevice::{MOUSE_MOVE_ABSOLUTE, MOUSE_MOVE_RELATIVE},
-    },
-    Foundation::{
-        ERROR_NO_MORE_ITEMS, HINSTANCE, HWND, INVALID_HANDLE_VALUE, LPARAM, LRESULT, POINT, POINTL,
-        PWSTR, RECT, WPARAM,
-    },
-    Graphics::{
-        Dwm::DwmIsCompositionEnabled,
-        Gdi::{
-            EnumDisplayDevicesW, GetMonitorInfoW, MonitorFromRect, DISPLAY_DEVICEW,
-            DISPLAY_DEVICE_ACTIVE, DISPLAY_DEVICE_ATTACHED_TO_DESKTOP,
-            DISPLAY_DEVICE_MIRRORING_DRIVER, DISPLAY_DEVICE_PRIMARY_DEVICE, HMONITOR, MONITORINFO,
-            MONITOR_DEFAULTTONEAREST,
-        },
-    },
-    System::Registry::{HKEY, KEY_READ},
-    UI::{
-        Accessibility::{
-            FILTERKEYS, SKF_CONFIRMHOTKEY, SKF_HOTKEYACTIVE, SKF_STICKYKEYSON, STICKYKEYS,
-            TOGGLEKEYS,
-        },
-        Controls::{WM_MOUSEHOVER, WM_MOUSELEAVE},
-        Input::{
-            GetRawInputData, GetRawInputDeviceInfoA, GetRawInputDeviceList,
-            Ime::{
-                IMN_CHANGECANDIDATE, IMN_CLOSECANDIDATE, IMN_CLOSESTATUSWINDOW, IMN_GUIDELINE,
-                IMN_OPENCANDIDATE, IMN_OPENSTATUSWINDOW, IMN_PRIVATE, IMN_SETCANDIDATEPOS,
-                IMN_SETCOMPOSITIONFONT, IMN_SETCOMPOSITIONWINDOW, IMN_SETCONVERSIONMODE,
-                IMN_SETOPENSTATUS, IMN_SETSENTENCEMODE, IMN_SETSTATUSWINDOWPOS,
-                IMR_CANDIDATEWINDOW, IMR_COMPOSITIONFONT, IMR_COMPOSITIONWINDOW,
-                IMR_CONFIRMRECONVERTSTRING, IMR_DOCUMENTFEED, IMR_QUERYCHARPOSITION,
-                IMR_RECONVERTSTRING,
+use windows::{
+    core::PCWSTR,
+    Win32::{
+        Devices::{
+            DeviceAndDriverInstallation::{
+                CM_Get_Device_IDW, SetupDiDestroyDeviceInfoList, SetupDiEnumDeviceInfo,
+                SetupDiGetClassDevsExW, SetupDiOpenDevRegKey, CR_SUCCESS, DICS_FLAG_GLOBAL,
+                DIGCF_PRESENT, DIREG_DEV, GUID_DEVCLASS_MONITOR, HDEVINFO, MAX_DEVICE_ID_LEN,
+                SP_DEVINFO_DATA,
             },
-            KeyboardAndMouse::{
-                GetCapture, SetCapture, VK_CAPITAL, VK_F4, VK_LCONTROL, VK_LMENU, VK_LSHIFT,
-                VK_RCONTROL, VK_RMENU, VK_RSHIFT, VK_SPACE,
-            },
-            RegisterRawInputDevices, HRAWINPUT, RAWINPUT, RAWINPUTDEVICE, RAWINPUTDEVICELIST,
-            RAWINPUTHEADER, RIDEV_REMOVE, RIDI_DEVICENAME, RID_INPUT, RIM_TYPEMOUSE,
+            HumanInterfaceDevice::{MOUSE_MOVE_ABSOLUTE, MOUSE_MOVE_RELATIVE},
         },
-        WindowsAndMessaging::{
-            AdjustWindowRectEx, DefWindowProcW, DispatchMessageW, GetCursorPos, GetSystemMetrics,
-            GetWindowInfo, GetWindowLongW, MessageBoxW, PeekMessageW, RegisterClassW, SetCursorPos,
-            SystemParametersInfoW, TranslateMessage, WindowFromPoint, CREATESTRUCTW, CS_DBLCLKS,
-            DLGC_WANTALLKEYS, FKF_CONFIRMHOTKEY, FKF_FILTERKEYSON, FKF_HOTKEYACTIVE, GWLP_USERDATA,
-            GWL_EXSTYLE, GWL_STYLE, HICON, HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCAPTION,
-            HTCLIENT, HTCLOSE, HTLEFT, HTMAXBUTTON, HTMINBUTTON, HTNOWHERE, HTRIGHT, HTSYSMENU,
-            HTTOP, HTTOPLEFT, HTTOPRIGHT, MB_ICONEXCLAMATION, MB_OK, MINMAXINFO, MSG,
-            NCCALCSIZE_PARAMS, PM_REMOVE, SC_MAXIMIZE, SC_RESTORE, SM_CXSCREEN, SM_CXVIRTUALSCREEN,
-            SM_CYSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SPI_GETWORKAREA,
-            SPI_SETFILTERKEYS, SPI_SETSTICKYKEYS, SPI_SETTOGGLEKEYS, SW_RESTORE, TKF_CONFIRMHOTKEY,
-            TKF_HOTKEYACTIVE, TKF_TOGGLEKEYSON, WINDOWINFO, WMSZ_BOTTOM, WMSZ_BOTTOMLEFT,
-            WMSZ_BOTTOMRIGHT, WMSZ_LEFT, WMSZ_RIGHT, WMSZ_TOP, WMSZ_TOPLEFT, WMSZ_TOPRIGHT,
-            WM_ACTIVATE, WM_ACTIVATEAPP, WM_CHAR, WM_CLOSE, WM_CREATE, WM_DESTROY, WM_DEVICECHANGE,
-            WM_DISPLAYCHANGE, WM_DWMCOMPOSITIONCHANGED, WM_ENTERSIZEMOVE, WM_ERASEBKGND,
-            WM_EXITSIZEMOVE, WM_GETDLGCODE, WM_GETMINMAXINFO, WM_IME_CHAR, WM_IME_COMPOSITION,
-            WM_IME_ENDCOMPOSITION, WM_IME_NOTIFY, WM_IME_REQUEST, WM_IME_SETCONTEXT,
-            WM_IME_STARTCOMPOSITION, WM_INPUT, WM_INPUTLANGCHANGE, WM_INPUTLANGCHANGEREQUEST,
-            WM_INPUT_DEVICE_CHANGE, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN,
-            WM_LBUTTONUP, WM_MBUTTONDBLCLK, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEACTIVATE,
-            WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_MOVE, WM_NCACTIVATE, WM_NCCALCSIZE,
-            WM_NCCREATE, WM_NCHITTEST, WM_NCLBUTTONDOWN, WM_NCMBUTTONDBLCLK, WM_NCMBUTTONDOWN,
-            WM_NCMBUTTONUP, WM_NCMOUSEHOVER, WM_NCMOUSELEAVE, WM_NCMOUSEMOVE, WM_NCPAINT,
-            WM_NCRBUTTONDBLCLK, WM_NCRBUTTONDOWN, WM_NCRBUTTONUP, WM_NCXBUTTONDBLCLK,
-            WM_NCXBUTTONDOWN, WM_NCXBUTTONUP, WM_PAINT, WM_RBUTTONDBLCLK, WM_RBUTTONDOWN,
-            WM_RBUTTONUP, WM_SETCURSOR, WM_SETTINGCHANGE, WM_SHOWWINDOW, WM_SIZE, WM_SIZING,
-            WM_SYSCHAR, WM_SYSCOMMAND, WM_SYSKEYDOWN, WM_SYSKEYUP, WM_TOUCH, WM_XBUTTONDBLCLK,
-            WM_XBUTTONDOWN, WM_XBUTTONUP, WNDCLASSW, WVR_VALIDRECTS,
+        Foundation::{
+            ERROR_NO_MORE_ITEMS, HINSTANCE, HWND, INVALID_HANDLE_VALUE, LPARAM, LRESULT, POINT,
+            POINTL, RECT, WPARAM,
+        },
+        Graphics::{
+            Dwm::DwmIsCompositionEnabled,
+            Gdi::{
+                EnumDisplayDevicesW, GetMonitorInfoW, MonitorFromRect, DISPLAY_DEVICEW,
+                DISPLAY_DEVICE_ACTIVE, DISPLAY_DEVICE_ATTACHED_TO_DESKTOP,
+                DISPLAY_DEVICE_MIRRORING_DRIVER, DISPLAY_DEVICE_PRIMARY_DEVICE, HBRUSH, HMONITOR,
+                MONITORINFO, MONITOR_DEFAULTTONEAREST,
+            },
+        },
+        System::Registry::{HKEY, KEY_READ},
+        UI::{
+            Accessibility::{
+                FILTERKEYS, SKF_CONFIRMHOTKEY, SKF_HOTKEYACTIVE, SKF_STICKYKEYSON, STICKYKEYS,
+                TOGGLEKEYS,
+            },
+            Controls::{WM_MOUSEHOVER, WM_MOUSELEAVE},
+            Input::{
+                GetRawInputData, GetRawInputDeviceInfoA, GetRawInputDeviceList,
+                Ime::{
+                    IMN_CHANGECANDIDATE, IMN_CLOSECANDIDATE, IMN_CLOSESTATUSWINDOW, IMN_GUIDELINE,
+                    IMN_OPENCANDIDATE, IMN_OPENSTATUSWINDOW, IMN_PRIVATE, IMN_SETCANDIDATEPOS,
+                    IMN_SETCOMPOSITIONFONT, IMN_SETCOMPOSITIONWINDOW, IMN_SETCONVERSIONMODE,
+                    IMN_SETOPENSTATUS, IMN_SETSENTENCEMODE, IMN_SETSTATUSWINDOWPOS,
+                    IMR_CANDIDATEWINDOW, IMR_COMPOSITIONFONT, IMR_COMPOSITIONWINDOW,
+                    IMR_CONFIRMRECONVERTSTRING, IMR_DOCUMENTFEED, IMR_QUERYCHARPOSITION,
+                    IMR_RECONVERTSTRING,
+                },
+                KeyboardAndMouse::{
+                    GetCapture, SetCapture, VK_CAPITAL, VK_F4, VK_LCONTROL, VK_LMENU, VK_LSHIFT,
+                    VK_RCONTROL, VK_RMENU, VK_RSHIFT, VK_SPACE,
+                },
+                RegisterRawInputDevices, HRAWINPUT, RAWINPUT, RAWINPUTDEVICE, RAWINPUTDEVICELIST,
+                RAWINPUTDEVICE_FLAGS, RAWINPUTHEADER, RIDEV_REMOVE, RIDI_DEVICENAME, RID_INPUT,
+                RIM_TYPEMOUSE,
+            },
+            WindowsAndMessaging::{
+                AdjustWindowRectEx, DefWindowProcW, DispatchMessageW, GetCursorPos,
+                GetSystemMetrics, GetWindowInfo, GetWindowLongW, MessageBoxW, PeekMessageW,
+                RegisterClassW, SetCursorPos, SystemParametersInfoW, TranslateMessage,
+                WindowFromPoint, CREATESTRUCTW, CS_DBLCLKS, DLGC_WANTALLKEYS, FKF_CONFIRMHOTKEY,
+                FKF_FILTERKEYSON, FKF_HOTKEYACTIVE, GWLP_USERDATA, GWL_EXSTYLE, GWL_STYLE, HCURSOR,
+                HICON, HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCAPTION, HTCLIENT, HTCLOSE, HTLEFT,
+                HTMAXBUTTON, HTMINBUTTON, HTNOWHERE, HTRIGHT, HTSYSMENU, HTTOP, HTTOPLEFT,
+                HTTOPRIGHT, MB_ICONEXCLAMATION, MB_OK, MINMAXINFO, MSG, NCCALCSIZE_PARAMS,
+                PM_REMOVE, SC_MAXIMIZE, SC_RESTORE, SM_CXSCREEN, SM_CXVIRTUALSCREEN, SM_CYSCREEN,
+                SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SPI_GETWORKAREA,
+                SPI_SETFILTERKEYS, SPI_SETSTICKYKEYS, SPI_SETTOGGLEKEYS, SW_RESTORE,
+                SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, TKF_CONFIRMHOTKEY, TKF_HOTKEYACTIVE,
+                TKF_TOGGLEKEYSON, WINDOWINFO, WINDOW_EX_STYLE, WINDOW_STYLE, WMSZ_BOTTOM,
+                WMSZ_BOTTOMLEFT, WMSZ_BOTTOMRIGHT, WMSZ_LEFT, WMSZ_RIGHT, WMSZ_TOP, WMSZ_TOPLEFT,
+                WMSZ_TOPRIGHT, WM_ACTIVATE, WM_ACTIVATEAPP, WM_CHAR, WM_CLOSE, WM_CREATE,
+                WM_DESTROY, WM_DEVICECHANGE, WM_DISPLAYCHANGE, WM_DWMCOMPOSITIONCHANGED,
+                WM_ENTERSIZEMOVE, WM_ERASEBKGND, WM_EXITSIZEMOVE, WM_GETDLGCODE, WM_GETMINMAXINFO,
+                WM_IME_CHAR, WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION, WM_IME_NOTIFY,
+                WM_IME_REQUEST, WM_IME_SETCONTEXT, WM_IME_STARTCOMPOSITION, WM_INPUT,
+                WM_INPUTLANGCHANGE, WM_INPUTLANGCHANGEREQUEST, WM_INPUT_DEVICE_CHANGE, WM_KEYDOWN,
+                WM_KEYUP, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDBLCLK,
+                WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEHWHEEL, WM_MOUSEMOVE,
+                WM_MOUSEWHEEL, WM_MOVE, WM_NCACTIVATE, WM_NCCALCSIZE, WM_NCCREATE, WM_NCHITTEST,
+                WM_NCLBUTTONDOWN, WM_NCMBUTTONDBLCLK, WM_NCMBUTTONDOWN, WM_NCMBUTTONUP,
+                WM_NCMOUSEHOVER, WM_NCMOUSELEAVE, WM_NCMOUSEMOVE, WM_NCPAINT, WM_NCRBUTTONDBLCLK,
+                WM_NCRBUTTONDOWN, WM_NCRBUTTONUP, WM_NCXBUTTONDBLCLK, WM_NCXBUTTONDOWN,
+                WM_NCXBUTTONUP, WM_PAINT, WM_RBUTTONDBLCLK, WM_RBUTTONDOWN, WM_RBUTTONUP,
+                WM_SETCURSOR, WM_SETTINGCHANGE, WM_SHOWWINDOW, WM_SIZE, WM_SIZING, WM_SYSCHAR,
+                WM_SYSCOMMAND, WM_SYSKEYDOWN, WM_SYSKEYUP, WM_TOUCH, WM_XBUTTONDBLCLK,
+                WM_XBUTTONDOWN, WM_XBUTTONUP, WNDCLASSW, WVR_VALIDRECTS,
+            },
         },
     },
 };
@@ -157,22 +161,22 @@ lazy_static! {
     static ref MINIMIZED_WINDOW_POSITION: IntPoint2 = IntPoint2::new(-32000, -32000);
 }
 
-static HIT_RESULTS: [LRESULT; 15] = [
-    HTNOWHERE as isize,
-    HTTOPLEFT as isize,
-    HTTOP as isize,
-    HTTOPRIGHT as isize,
-    HTLEFT as isize,
-    HTCLIENT as isize,
-    HTRIGHT as isize,
-    HTBOTTOMLEFT as isize,
-    HTBOTTOM as isize,
-    HTBOTTOMRIGHT as isize,
-    HTCAPTION as isize,
-    HTMINBUTTON as isize,
-    HTMAXBUTTON as isize,
-    HTCLOSE as isize,
-    HTSYSMENU as isize,
+static HIT_RESULTS: [u32; 15] = [
+    HTNOWHERE,
+    HTTOPLEFT,
+    HTTOP,
+    HTTOPRIGHT,
+    HTLEFT,
+    HTCLIENT,
+    HTRIGHT,
+    HTBOTTOMLEFT,
+    HTBOTTOM,
+    HTBOTTOMRIGHT,
+    HTCAPTION,
+    HTMINBUTTON,
+    HTMAXBUTTON,
+    HTCLOSE,
+    HTSYSMENU,
 ];
 
 pub enum TaskbarProgressState {
@@ -428,10 +432,10 @@ impl WindowsApplication {
                 cbWndExtra: 0,
                 hInstance: hinstance,
                 hIcon: hicon,
-                hCursor: 0,       // We manage the cursor ourselves
-                hbrBackground: 0, // Transparent
-                lpszMenuName: PWSTR("".to_wide_null().as_mut_ptr()),
-                lpszClassName: PWSTR(APP_WINDOW_CLASS.to_wide_null().as_mut_ptr()),
+                hCursor: HCURSOR(0),      // We manage the cursor ourselves
+                hbrBackground: HBRUSH(0), // Transparent
+                lpszMenuName: PCWSTR::null(),
+                lpszClassName: PCWSTR::from_raw(APP_WINDOW_CLASS.to_wide_null().as_ptr()),
             };
 
             if RegisterClassW(&wc) == 0 {
@@ -440,9 +444,9 @@ impl WindowsApplication {
                 // @todo Slate: Error message should be localized!
                 //FSlowHeartBeatScope SuspendHeartBeat;
                 MessageBoxW(
-                    0,
-                    PWSTR("Window Registration Failed!".to_wide_null().as_mut_ptr()),
-                    PWSTR("Error!".to_wide_null().as_mut_ptr()),
+                    HWND(0),
+                    PCWSTR("Window Registration Failed!".to_wide_null().as_ptr()),
+                    PCWSTR("Error!".to_wide_null().as_ptr()),
                     MB_ICONEXCLAMATION | MB_OK,
                 );
 
@@ -510,7 +514,7 @@ impl WindowsApplication {
     pub fn set_capture(&mut self, window: Rc<dyn GenericWindow>) {
         //if ( InWindow.IsValid() )
         unsafe {
-            SetCapture(window.get_os_window_handle() as HWND);
+            SetCapture(HWND(window.get_os_window_handle() as usize as isize));
         }
         /*else
         {
@@ -523,14 +527,14 @@ impl WindowsApplication {
     }
     pub fn set_high_precision_mouse_mode(&mut self, enable: bool, window: Rc<dyn GenericWindow>) {
         unsafe {
-            let mut hwnd: HWND = 0;
-            let mut flags: u32 = RIDEV_REMOVE;
+            let mut hwnd = HWND(0);
+            let mut flags = RIDEV_REMOVE;
             self.using_high_precision_mouse_input = enable;
 
             if enable {
-                flags = 0;
+                flags = RAWINPUTDEVICE_FLAGS(0);
                 //if ( InWindow.IsValid() )
-                hwnd = window.get_os_window_handle() as HWND;
+                hwnd = HWND(window.get_os_window_handle() as usize as isize);
             }
             let mut raw_input_device = RAWINPUTDEVICE::default();
             //The HID standard for mouse
@@ -545,11 +549,7 @@ impl WindowsApplication {
             raw_input_device.hwndTarget = hwnd;
 
             // Register the raw input device
-            RegisterRawInputDevices(
-                &raw_input_device,
-                1,
-                mem::size_of::<RAWINPUTDEVICE>() as u32,
-            );
+            RegisterRawInputDevices(&[raw_input_device], 1);
         }
     }
     pub fn get_work_area(&self, current_window: &PlatformRect) -> PlatformRect {
@@ -616,9 +616,9 @@ impl WindowsApplication {
                             let mut border_rect: RECT = mem::zeroed();
                             AdjustWindowRectEx(
                                 &mut border_rect,
-                                window_style as u32,
+                                WINDOW_STYLE(window_style as u32),
                                 false,
-                                window_ex_style as u32,
+                                WINDOW_EX_STYLE(window_ex_style as u32),
                             );
 
                             border_width = border_rect.right - border_rect.left;
@@ -649,9 +649,9 @@ impl WindowsApplication {
                     WM_INPUT => {
                         let mut size: u32 = 0;
                         GetRawInputData(
-                            lparam as HRAWINPUT,
+                            HRAWINPUT(lparam.0),
                             RID_INPUT,
-                            ptr::null_mut(),
+                            None,
                             &mut size,
                             mem::size_of::<RAWINPUTHEADER>() as u32,
                         );
@@ -660,9 +660,9 @@ impl WindowsApplication {
                             let mut raw = RAWINPUT::default();
                             assert!(
                                 GetRawInputData(
-                                    lparam as HRAWINPUT,
+                                    HRAWINPUT(lparam.0),
                                     RID_INPUT,
-                                    &mut raw as *mut RAWINPUT as *mut c_void,
+                                    Some(&mut raw as *mut RAWINPUT as *mut c_void),
                                     &mut size,
                                     mem::size_of::<RAWINPUTHEADER>() as u32
                                 ) == size
@@ -671,7 +671,7 @@ impl WindowsApplication {
                         };
                         let raw_mouse = raw.data.mouse;
 
-                        if raw.header.dwType == RIM_TYPEMOUSE {
+                        if raw.header.dwType == 0 {
                             let is_absolute_input = (raw_mouse.usFlags as u32
                                 & MOUSE_MOVE_ABSOLUTE)
                                 == MOUSE_MOVE_ABSOLUTE;
@@ -714,7 +714,7 @@ impl WindowsApplication {
                         let borrowed_window_borrow = borrowed_window.borrow();
                         let windef = borrowed_window_borrow.get_definition();
                         // Let windows absorb this message if using the standard border
-                        if wparam != 0 && !windef.has_os_window_border {
+                        if wparam.0 != 0 && !windef.has_os_window_border {
                             // Borderless game windows are not actually borderless, they have a thick border that we simply draw game content over (client
                             // rect contains the window border). When maximized Windows will bleed our border over the edges of the monitor. So that we
                             // don't draw content we are going to later discard, we change a maximized window's size and position so that the entire
@@ -732,7 +732,7 @@ impl WindowsApplication {
 
                                 // A pointer to the window size data that Windows will use is passed to us in lparam
                                 let resizing_rects: &mut NCCALCSIZE_PARAMS =
-                                    &mut *(lparam as usize as *mut NCCALCSIZE_PARAMS) as &mut _;
+                                    &mut *(lparam.0 as usize as *mut NCCALCSIZE_PARAMS) as &mut _;
 
                                 // The first rectangle contains the client rectangle of the resized window.
                                 // Decrease window size on all sides by the border size.
@@ -782,9 +782,9 @@ impl WindowsApplication {
                             let mut test_rect: RECT = mem::zeroed();
                             AdjustWindowRectEx(
                                 &mut test_rect,
-                                window_info.dwStyle,
+                                WINDOW_STYLE(window_info.dwStyle),
                                 false,
-                                window_info.dwExStyle,
+                                WINDOW_EX_STYLE(window_info.dwExStyle),
                             );
 
                             let mut rect: RECT = {
@@ -801,30 +801,33 @@ impl WindowsApplication {
                             let new_width = rect.right - rect.left;
                             let new_height = rect.bottom - rect.top;
 
-                            if wparam == WMSZ_LEFT as usize || wparam == WMSZ_RIGHT as usize {
+                            let wparam0 = wparam.0;
+
+                            if wparam0 == WMSZ_LEFT as usize || wparam0 == WMSZ_RIGHT as usize {
                                 let adjusted_height: i32 = new_width / aspect_ratio as i32;
                                 rect.top -= (adjusted_height - new_height) / 2;
                                 rect.bottom += (adjusted_height - new_height) / 2;
                                 //break;
-                            } else if wparam == WMSZ_TOP as usize || wparam == WMSZ_BOTTOM as usize
+                            } else if wparam0 == WMSZ_TOP as usize
+                                || wparam0 == WMSZ_BOTTOM as usize
                             {
                                 let adjusted_width: i32 = new_height * aspect_ratio as i32;
                                 rect.left -= (adjusted_width - new_width) / 2;
                                 rect.right += (adjusted_width - new_width) / 2;
                                 //break;
-                            } else if wparam == WMSZ_TOPLEFT as usize {
+                            } else if wparam0 == WMSZ_TOPLEFT as usize {
                                 let adjusted_height: i32 = new_width / aspect_ratio as i32;
                                 rect.top -= adjusted_height - new_height;
                                 //break;
-                            } else if wparam == WMSZ_TOPRIGHT as usize {
+                            } else if wparam0 == WMSZ_TOPRIGHT as usize {
                                 let adjusted_height: i32 = new_width / aspect_ratio as i32;
                                 rect.top -= adjusted_height - new_height;
                                 //break;
-                            } else if wparam == WMSZ_BOTTOMLEFT as usize {
+                            } else if wparam0 == WMSZ_BOTTOMLEFT as usize {
                                 let adjusted_height: i32 = new_width / aspect_ratio as i32;
                                 rect.bottom += adjusted_height - new_height;
                                 //break;
-                            } else if wparam == WMSZ_BOTTOMRIGHT as usize {
+                            } else if wparam0 == WMSZ_BOTTOMRIGHT as usize {
                                 let adjusted_height: i32 = new_width / aspect_ratio as i32;
                                 rect.bottom += adjusted_height - new_height;
                                 //break;
@@ -832,9 +835,9 @@ impl WindowsApplication {
 
                             AdjustWindowRectEx(
                                 &mut rect,
-                                window_info.dwStyle,
+                                WINDOW_STYLE(window_info.dwStyle),
                                 false,
-                                window_info.dwExStyle,
+                                WINDOW_EX_STYLE(window_info.dwExStyle),
                             );
 
                             return 1;
@@ -850,7 +853,7 @@ impl WindowsApplication {
                     _ => {}
                 }
             }
-            DefWindowProcW(hwnd, msg, wparam, lparam) as i32
+            DefWindowProcW(hwnd, msg, wparam, lparam).0 as i32
         }
     }
     /*void FWindowsApplication::GetInitialDisplayMetrics( FDisplayMetrics& OutDisplayMetrics ) const {
@@ -893,7 +896,7 @@ impl WindowsApplication {
             let mut device_count: u32 = 0;
 
             GetRawInputDeviceList(
-                ptr::null_mut(),
+                None,
                 &mut device_count,
                 mem::size_of::<RAWINPUTDEVICELIST>() as u32,
             );
@@ -905,7 +908,7 @@ impl WindowsApplication {
             let mut device_list: Vec<RAWINPUTDEVICELIST> =
                 Vec::with_capacity(device_count as usize);
             GetRawInputDeviceList(
-                device_list.as_mut_ptr() as *mut RAWINPUTDEVICELIST,
+                Some(device_list.as_mut_ptr() as *mut RAWINPUTDEVICELIST),
                 &mut device_count,
                 mem::size_of::<RAWINPUTDEVICELIST>() as u32,
             );
@@ -918,12 +921,8 @@ impl WindowsApplication {
                     continue;
                 }
                 //Force the use of ANSI versions of these calls
-                let ret = GetRawInputDeviceInfoA(
-                    device.hDevice,
-                    RIDI_DEVICENAME,
-                    ptr::null_mut(),
-                    &mut name_len,
-                );
+                let ret =
+                    GetRawInputDeviceInfoA(device.hDevice, RIDI_DEVICENAME, None, &mut name_len);
                 if ret as i32 == -1 {
                     continue;
                 }
@@ -932,7 +931,7 @@ impl WindowsApplication {
                 let ret = GetRawInputDeviceInfoA(
                     device.hDevice,
                     RIDI_DEVICENAME,
-                    name.as_mut_ptr() as *mut c_void,
+                    Some(name.as_mut_ptr() as *mut c_void),
                     &mut name_len,
                 );
                 if ret as i32 == -1 {
@@ -977,9 +976,11 @@ impl WindowsApplication {
         lparam: LPARAM,
     ) -> LRESULT {
         unsafe {
-            WINDOWS_APPLICATION
-                .unwrap()
-                .process_message(hwnd, msg, wparam, lparam) as isize
+            LRESULT(
+                WINDOWS_APPLICATION
+                    .unwrap()
+                    .process_message(hwnd, msg, wparam, lparam) as isize,
+            )
         }
     }
     pub fn pump_messages(&self, time_delta: f32) {
@@ -987,7 +988,7 @@ impl WindowsApplication {
             let mut message: MSG = mem::zeroed();
 
             // standard Windows message handling
-            while PeekMessageW(&mut message, 0, 0, 0, PM_REMOVE).0 != 0 {
+            while PeekMessageW(&mut message, HWND(0), 0, 0, PM_REMOVE).0 != 0 {
                 TranslateMessage(&message);
                 DispatchMessageW(&message);
             }
@@ -1055,16 +1056,20 @@ fn get_monitor_size_from_edid(
 fn get_size_for_dev_id(target_dev_id: &String, width: &mut i32, height: &mut i32) -> bool {
     unsafe {
         let dev_info = SetupDiGetClassDevsExW(
-            &GUID_DEVCLASS_MONITOR, //class GUID
-            PWSTR("".to_wide_null().as_mut_ptr()),
-            0,
+            Some(&GUID_DEVCLASS_MONITOR), //class GUID
+            PCWSTR::null(),
+            HWND(0),
             DIGCF_PRESENT,
-            ptr::null_mut(),
-            PWSTR("".to_wide_null().as_mut_ptr()),
-            ptr::null_mut(),
+            HDEVINFO(0),
+            PCWSTR::null(),
+            None,
         );
 
-        if dev_info.is_null() {
+        if dev_info.is_err() {
+            return false;
+        }
+        let dev_info = dev_info.unwrap();
+        if dev_info.is_invalid() {
             return false;
         }
 
@@ -1072,7 +1077,7 @@ fn get_size_for_dev_id(target_dev_id: &String, width: &mut i32, height: &mut i32
         let mut monitor_index = 0;
         loop {
             let err = Error::last_os_error();
-            if err.raw_os_error().unwrap() == ERROR_NO_MORE_ITEMS as i32 {
+            if err.raw_os_error().unwrap() == ERROR_NO_MORE_ITEMS.0 as i32 {
                 break;
             }
             let mut dev_info_data = SP_DEVINFO_DATA::default();
@@ -1080,24 +1085,18 @@ fn get_size_for_dev_id(target_dev_id: &String, width: &mut i32, height: &mut i32
 
             if SetupDiEnumDeviceInfo(dev_info, monitor_index, &mut dev_info_data).0 != 0 {
                 let mut buffer = [0u16; MAX_DEVICE_ID_LEN as usize];
-                if CM_Get_Device_IDW(
-                    dev_info_data.DevInst,
-                    PWSTR(buffer.as_mut_ptr()),
-                    MAX_DEVICE_ID_LEN as u32,
-                    0,
-                ) == CR_SUCCESS
-                {
+                if CM_Get_Device_IDW(dev_info_data.DevInst, &mut buffer, 0) == CR_SUCCESS {
                     let mut dev_id = String::from_utf16_lossy(&buffer[..]);
                     let idx = &dev_id[9..].find("\\").unwrap();
                     dev_id = dev_id[8..9 + *idx].to_string();
                     if &dev_id[..] == &target_dev_id[..] {
-                        let h_dev_reg_key: HKEY = SetupDiOpenDevRegKey(
+                        let h_dev_reg_key = SetupDiOpenDevRegKey(
                             dev_info,
-                            &mut dev_info_data,
+                            &dev_info_data,
                             DICS_FLAG_GLOBAL,
                             0,
                             DIREG_DEV,
-                            KEY_READ,
+                            KEY_READ.0,
                         );
 
                         if h_dev_reg_key != 0 && h_dev_reg_key != INVALID_HANDLE_VALUE.0 {
@@ -1132,21 +1131,14 @@ fn get_monitor_info(out_monitor_info: &mut Vec<MonitorInfo>) {
         let mut primary_device: *mut MonitorInfo = ptr::null_mut();
         out_monitor_info.reserve(2); // Reserve two slots, as that will be the most common maximum
 
-        while EnumDisplayDevicesW(
-            PWSTR("".to_wide_null().as_mut_ptr()),
-            device_index,
-            &mut display_device,
-            0,
-        )
-        .0 != 0
-        {
+        while EnumDisplayDevicesW(PCWSTR::null(), device_index, &mut display_device, 0).0 != 0 {
             if display_device.StateFlags & DISPLAY_DEVICE_ATTACHED_TO_DESKTOP > 0 {
                 let mut monitor = DISPLAY_DEVICEW::default();
                 monitor.cb = mem::size_of::<DISPLAY_DEVICEW>() as u32;
                 let mut monitor_index = 0;
 
                 while EnumDisplayDevicesW(
-                    PWSTR(display_device.DeviceName.as_mut_ptr()),
+                    PCWSTR(display_device.DeviceName.as_ptr()),
                     monitor_index,
                     &mut monitor,
                     0,
@@ -1219,8 +1211,13 @@ impl DisplayMetrics {
 
             // Get the screen rect of the primary monitor, excluding taskbar etc.
             let mut work_area_rect: RECT = mem::zeroed();
-            if SystemParametersInfoW(SPI_GETWORKAREA, 0, mem::transmute(&mut work_area_rect), 0).0
-                == 0
+            if SystemParametersInfoW(
+                SPI_GETWORKAREA,
+                0,
+                Some(&mut work_area_rect as *mut RECT as *mut _),
+                SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
+            )
+            .0 == 0
             {
                 work_area_rect.top = 0;
                 work_area_rect.bottom = 0;

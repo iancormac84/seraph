@@ -28,6 +28,6 @@ features = [
 
 [dependencies]
 bitflags = "*"
-cgmath = "*"
+glam = "*"
 lazy_static = "*"
 winreg = "*"

@@ -1,54 +1,60 @@
-use crate::generic::window::{GenericWindow, WindowDrawAttentionRequestType, WindowMode};
-use crate::generic::window_definition::{
-    WindowActivationPolicy, WindowDefinition, WindowTransparency, WindowType,
+use crate::{
+    generic::{
+        window::{GenericWindow, WindowDrawAttentionRequestType, WindowMode},
+        window_definition::{
+            WindowActivationPolicy, WindowDefinition, WindowTransparency, WindowType,
+        },
+    },
+    windows::{
+        application::{WindowsApplication, WINDOWS_APPLICATION},
+        utils::ToWide,
+    },
 };
-use crate::windows::application::WindowsApplication;
-use crate::windows::application::WINDOWS_APPLICATION;
-use crate::windows::utils::ToWide;
 use std::{
     borrow::{Borrow, BorrowMut},
     cell::{Cell, RefCell},
     cmp, fmt, io, mem,
     os::raw::c_void,
-    ptr,
     rc::Rc,
     sync::{Arc, Weak},
 };
-use windows::Win32::UI::WindowsAndMessaging::{
-    FlashWindowEx, FLASHWINFO, FLASHW_STOP, FLASHW_TIMERNOFG, FLASHW_TRAY,
-};
-use windows::Win32::{
-    Foundation::{BOOL, HINSTANCE, HWND, PWSTR, RECT},
-    Graphics::{
-        Dwm::{
-            DwmExtendFrameIntoClientArea, DwmSetWindowAttribute, DWMNCRP_DISABLED,
-            DWMWA_ALLOW_NCPAINT, DWMWA_NCRENDERING_POLICY,
+use windows::{
+    core::PCWSTR,
+    Win32::{
+        Foundation::{BOOL, COLORREF, HINSTANCE, HWND, RECT},
+        Graphics::{
+            Dwm::{
+                DwmExtendFrameIntoClientArea, DwmSetWindowAttribute, DWMNCRP_DISABLED,
+                DWMWA_ALLOW_NCPAINT, DWMWA_NCRENDERING_POLICY,
+            },
+            Gdi::{
+                CreateRectRgn, CreateRoundRectRgn, DeleteObject, GetMonitorInfoW,
+                MonitorFromWindow, PtInRegion, SetWindowRgn, HRGN, MONITORINFO,
+                MONITOR_DEFAULTTONEAREST, MONITOR_DEFAULTTOPRIMARY,
+            },
         },
-        Gdi::{
-            CreateRectRgn, CreateRoundRectRgn, DeleteObject, GetMonitorInfoW, MonitorFromWindow,
-            PtInRegion, SetWindowRgn, HRGN, MONITORINFO, MONITOR_DEFAULTTONEAREST,
-            MONITOR_DEFAULTTOPRIMARY,
-        },
-    },
-    System::Ole::RevokeDragDrop,
-    UI::{
-        Controls::MARGINS,
-        Input::KeyboardAndMouse::{
-            EnableWindow, GetFocus, IsWindowEnabled, SetActiveWindow, SetFocus,
-        },
-        WindowsAndMessaging::{
-            AdjustWindowRectEx, CreateWindowExW, DestroyWindow, GetClientRect, GetForegroundWindow,
-            GetSystemMetrics, GetWindowInfo, GetWindowLongW, GetWindowPlacement, GetWindowRect,
-            IsIconic, IsWindow, IsZoomed, SetLayeredWindowAttributes, SetWindowLongW,
-            SetWindowPlacement, SetWindowPos, SetWindowTextW, ShowWindow, GWL_EXSTYLE, GWL_STYLE,
-            HMENU, HWND_TOP, HWND_TOPMOST, LWA_ALPHA, MB_ICONEXCLAMATION, MB_OK, SM_CYCAPTION,
-            SM_REMOTESESSION, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER,
-            SWP_NOREDRAW, SWP_NOSENDCHANGING, SWP_NOSIZE, SWP_NOZORDER, SW_HIDE, SW_MAXIMIZE,
-            SW_MINIMIZE, SW_RESTORE, SW_SHOW, SW_SHOWMAXIMIZED, SW_SHOWMINNOACTIVE, SW_SHOWNA,
-            SW_SHOWNOACTIVATE, WINDOWINFO, WINDOWPLACEMENT, WS_BORDER, WS_CAPTION, WS_CLIPCHILDREN,
-            WS_CLIPSIBLINGS, WS_EX_APPWINDOW, WS_EX_COMPOSITED, WS_EX_LAYERED, WS_EX_TOOLWINDOW,
-            WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_EX_WINDOWEDGE, WS_MAXIMIZEBOX, WS_MINIMIZEBOX,
-            WS_OVERLAPPED, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
+        System::Ole::RevokeDragDrop,
+        UI::{
+            Controls::MARGINS,
+            Input::KeyboardAndMouse::{
+                EnableWindow, GetFocus, IsWindowEnabled, SetActiveWindow, SetFocus,
+            },
+            WindowsAndMessaging::{
+                FlashWindowEx, FLASHWINFO, FLASHW_STOP, FLASHW_TIMERNOFG, FLASHW_TRAY, WINDOW_EX_STYLE,
+    WINDOW_STYLE, SET_WINDOW_POS_FLAGS, AdjustWindowRectEx, CreateWindowExW, DestroyWindow, GetClientRect,
+                GetForegroundWindow, GetSystemMetrics, GetWindowInfo, GetWindowLongW,
+                GetWindowPlacement, GetWindowRect, IsIconic, IsWindow, IsZoomed,
+                SetLayeredWindowAttributes, SetWindowLongW, SetWindowPlacement, SetWindowPos,
+                SetWindowTextW, ShowWindow, GWL_EXSTYLE, GWL_STYLE, HMENU, HWND_TOP, HWND_TOPMOST,
+                LWA_ALPHA, MB_ICONEXCLAMATION, MB_OK, SM_CYCAPTION, SM_REMOTESESSION,
+                SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOREDRAW,
+                SWP_NOSENDCHANGING, SWP_NOSIZE, SWP_NOZORDER, SW_HIDE, SW_MAXIMIZE, SW_MINIMIZE,
+                SW_RESTORE, SW_SHOW, SW_SHOWMAXIMIZED, SW_SHOWMINNOACTIVE, SW_SHOWNA,
+                SW_SHOWNOACTIVATE, WINDOWINFO, WINDOWPLACEMENT, WS_BORDER, WS_CAPTION,
+                WS_CLIPCHILDREN, WS_CLIPSIBLINGS, WS_EX_APPWINDOW, WS_EX_COMPOSITED, WS_EX_LAYERED,
+                WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_EX_WINDOWEDGE,
+                WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_OVERLAPPED, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
+            },
         },
     },
 };
@@ -80,8 +86,8 @@ pub struct WindowsWindow {
 
 impl fmt::Debug for WindowsWindow {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let pre_fullscreen_window_placement = format!("WINDOWPLACEMENT {{ length: {}, flags: {}, showCmd: {}, ptMinPosition: POINT {{ x: {}, y: {} }}, ptMaxPosition: POINT {{ x: {}, y: {} }}, rcNormalPosition: RECT {{ left: {}, top: {}, right: {}, bottom: {} }} }}", &self.pre_fullscreen_window_placement.length, &self.pre_fullscreen_window_placement.flags, &self.pre_fullscreen_window_placement.showCmd, &self.pre_fullscreen_window_placement.ptMinPosition.x, &self.pre_fullscreen_window_placement.ptMinPosition.y, &self.pre_fullscreen_window_placement.ptMaxPosition.x, &self.pre_fullscreen_window_placement.ptMaxPosition.y, &self.pre_fullscreen_window_placement.rcNormalPosition.left, &self.pre_fullscreen_window_placement.rcNormalPosition.top, &self.pre_fullscreen_window_placement.rcNormalPosition.right, &self.pre_fullscreen_window_placement.rcNormalPosition.bottom);
-        let pre_parent_minimized_window_placement = format!("WINDOWPLACEMENT {{ length: {}, flags: {}, showCmd: {}, ptMinPosition: POINT {{ x: {}, y: {} }}, ptMaxPosition: POINT {{ x: {}, y: {} }}, rcNormalPosition: RECT {{ left: {}, top: {}, right: {}, bottom: {} }} }}", &self.pre_parent_minimized_window_placement.length, &self.pre_parent_minimized_window_placement.flags, &self.pre_parent_minimized_window_placement.showCmd, &self.pre_parent_minimized_window_placement.ptMinPosition.x, &self.pre_parent_minimized_window_placement.ptMinPosition.y, &self.pre_parent_minimized_window_placement.ptMaxPosition.x, &self.pre_parent_minimized_window_placement.ptMaxPosition.y, &self.pre_parent_minimized_window_placement.rcNormalPosition.left, &self.pre_parent_minimized_window_placement.rcNormalPosition.top, &self.pre_parent_minimized_window_placement.rcNormalPosition.right, &self.pre_parent_minimized_window_placement.rcNormalPosition.bottom);
+        let pre_fullscreen_window_placement = format!("WINDOWPLACEMENT {{ length: {}, flags: {}, showCmd: {}, ptMinPosition: POINT {{ x: {}, y: {} }}, ptMaxPosition: POINT {{ x: {}, y: {} }}, rcNormalPosition: RECT {{ left: {}, top: {}, right: {}, bottom: {} }} }}", &self.pre_fullscreen_window_placement.length, &self.pre_fullscreen_window_placement.flags.0, &self.pre_fullscreen_window_placement.showCmd.0, &self.pre_fullscreen_window_placement.ptMinPosition.x, &self.pre_fullscreen_window_placement.ptMinPosition.y, &self.pre_fullscreen_window_placement.ptMaxPosition.x, &self.pre_fullscreen_window_placement.ptMaxPosition.y, &self.pre_fullscreen_window_placement.rcNormalPosition.left, &self.pre_fullscreen_window_placement.rcNormalPosition.top, &self.pre_fullscreen_window_placement.rcNormalPosition.right, &self.pre_fullscreen_window_placement.rcNormalPosition.bottom);
+        let pre_parent_minimized_window_placement = format!("WINDOWPLACEMENT {{ length: {}, flags: {}, showCmd: {}, ptMinPosition: POINT {{ x: {}, y: {} }}, ptMaxPosition: POINT {{ x: {}, y: {} }}, rcNormalPosition: RECT {{ left: {}, top: {}, right: {}, bottom: {} }} }}", &self.pre_parent_minimized_window_placement.length, &self.pre_parent_minimized_window_placement.flags.0, &self.pre_parent_minimized_window_placement.showCmd.0, &self.pre_parent_minimized_window_placement.ptMinPosition.x, &self.pre_parent_minimized_window_placement.ptMinPosition.y, &self.pre_parent_minimized_window_placement.ptMaxPosition.x, &self.pre_parent_minimized_window_placement.ptMaxPosition.y, &self.pre_parent_minimized_window_placement.rcNormalPosition.left, &self.pre_parent_minimized_window_placement.rcNormalPosition.top, &self.pre_parent_minimized_window_placement.rcNormalPosition.right, &self.pre_parent_minimized_window_placement.rcNormalPosition.bottom);
         f.debug_struct("WindowsWindow")
             .field("app_window_class", &self.app_window_class)
             .field("owning_application", &self.owning_application)
@@ -122,7 +128,7 @@ impl WindowsWindow {
             WindowsWindow {
                 app_window_class: APP_WINDOW_CLASS,
                 owning_application: Arc::downgrade(WINDOWS_APPLICATION.unwrap()),
-                hwnd: Cell::new(0),
+                hwnd: Cell::new(HWND(0)),
                 region_height: Cell::new(-1),
                 region_width: Cell::new(-1),
                 window_mode: WindowMode::Windowed,
@@ -189,56 +195,61 @@ impl WindowsWindow {
         } == WindowTransparency::PerPixel;
 
         if !windef_borrow.has_os_window_border {
-            window_ex_style = WS_EX_WINDOWEDGE;
+            window_ex_style = WS_EX_WINDOWEDGE.0;
 
             if windef_borrow.transparency_support == WindowTransparency::PerWindow {
-                window_ex_style |= WS_EX_LAYERED;
+                window_ex_style |= WS_EX_LAYERED.0;
             } else if windef_borrow.transparency_support == WindowTransparency::PerPixel {
                 if application_supports_per_pixel_blending {
-                    window_ex_style |= WS_EX_COMPOSITED;
+                    window_ex_style |= WS_EX_COMPOSITED.0;
                 }
             }
-            window_style = WS_POPUP | WS_CLIPCHILDREN | WS_CLIPSIBLINGS;
+            window_style = WS_POPUP.0 | WS_CLIPCHILDREN.0 | WS_CLIPSIBLINGS.0;
             if windef_borrow.appears_in_taskbar {
-                window_ex_style |= WS_EX_APPWINDOW;
+                window_ex_style |= WS_EX_APPWINDOW.0;
             } else {
-                window_ex_style |= WS_EX_TOOLWINDOW;
+                window_ex_style |= WS_EX_TOOLWINDOW.0;
             }
             if windef_borrow.is_topmost_window {
                 // Tool tips are always top most windows
-                window_ex_style |= WS_EX_TOPMOST;
+                window_ex_style |= WS_EX_TOPMOST.0;
             }
             if !windef_borrow.accepts_input {
                 // Window should never get input
-                window_ex_style |= WS_EX_TRANSPARENT;
+                window_ex_style |= WS_EX_TRANSPARENT.0;
             }
         } else {
             // OS Window border setup
-            window_ex_style = WS_EX_APPWINDOW;
-            window_style = WS_OVERLAPPED | WS_SYSMENU | WS_CAPTION;
+            window_ex_style = WS_EX_APPWINDOW.0;
+            window_style = WS_OVERLAPPED.0 | WS_SYSMENU.0 | WS_CAPTION.0;
             if windef_borrow.is_regular_window {
                 if windef_borrow.supports_maximize {
-                    window_style |= WS_MAXIMIZEBOX;
+                    window_style |= WS_MAXIMIZEBOX.0;
                 }
 
                 if windef_borrow.supports_minimize {
-                    window_style |= WS_MINIMIZEBOX;
+                    window_style |= WS_MINIMIZEBOX.0;
                 }
 
                 if windef_borrow.has_sizing_frame {
-                    window_style |= WS_THICKFRAME;
+                    window_style |= WS_THICKFRAME.0;
                 } else {
-                    window_style |= WS_BORDER;
+                    window_style |= WS_BORDER.0;
                 }
             } else {
-                window_style |= WS_POPUP | WS_BORDER;
+                window_style |= WS_POPUP.0 | WS_BORDER.0;
             }
 
             // X,Y, Width, Height defines the top-left pixel of the client area on the screen
             // This adjusts a zero rect to give us the size of the border
             let mut border_rect = RECT::default();
             unsafe {
-                AdjustWindowRectEx(&mut border_rect, window_style, false, window_ex_style);
+                AdjustWindowRectEx(
+                    &mut border_rect,
+                    WINDOW_STYLE(window_style),
+                    false,
+                    WINDOW_EX_STYLE(window_ex_style),
+                );
             }
 
             // Border rect size is negative - see MoveWindowTo
@@ -262,10 +273,10 @@ impl WindowsWindow {
         );
         self.hwnd.set(
             match create_window(
-                window_ex_style,
-                PWSTR(APP_WINDOW_CLASS.to_wide_null().as_mut_ptr()),
-                PWSTR((&windef_borrow.title[..]).to_wide_null().as_mut_ptr()),
-                window_style,
+                WINDOW_EX_STYLE(window_ex_style),
+                PCWSTR(APP_WINDOW_CLASS.to_wide_null().as_ptr()),
+                PCWSTR((&windef_borrow.title[..]).to_wide_null().as_ptr()),
+                WINDOW_STYLE(window_style),
                 window_x,
                 window_y,
                 window_width,
@@ -273,11 +284,11 @@ impl WindowsWindow {
                 if parent.is_some() {
                     parent.unwrap().hwnd.get()
                 } else {
-                    0
+                    HWND(0)
                 },
-                0,
+                HMENU(0),
                 instance,
-                ptr::null_mut(),
+                None,
             ) {
                 Ok(hwnd) => hwnd,
                 Err(err) => {
@@ -362,16 +373,16 @@ impl WindowsWindow {
         }
 
         if windef_borrow.is_regular_window && !windef_borrow.has_os_window_border {
-            window_style |= WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU;
+            window_style |= WS_OVERLAPPED.0 | WS_CAPTION.0 | WS_SYSMENU.0;
 
             if windef_borrow.supports_maximize {
-                window_style |= WS_MAXIMIZEBOX;
+                window_style |= WS_MAXIMIZEBOX.0;
             }
             if windef_borrow.supports_minimize {
-                window_style |= WS_MINIMIZEBOX;
+                window_style |= WS_MINIMIZEBOX.0;
             }
             if windef_borrow.has_sizing_frame {
-                window_style |= WS_THICKFRAME;
+                window_style |= WS_THICKFRAME.0;
             }
 
             unsafe {
@@ -380,7 +391,7 @@ impl WindowsWindow {
                 }
                 SetWindowPos(
                     self.hwnd.get(),
-                    0,
+                    HWND(0),
                     0,
                     0,
                     0,
@@ -509,7 +520,7 @@ impl WindowsWindow {
                     SetWindowLongW(
                         self.hwnd.get(),
                         GWL_EXSTYLE,
-                        style | WS_EX_COMPOSITED as i32,
+                        style | WS_EX_COMPOSITED.0 as i32,
                     )
                 };
                 let margins: MARGINS = MARGINS {
@@ -528,7 +539,7 @@ impl WindowsWindow {
                     SetWindowLongW(
                         self.hwnd.get(),
                         GWL_EXSTYLE,
-                        style & !WS_EX_COMPOSITED as i32,
+                        style & !WS_EX_COMPOSITED.0 as i32,
                     )
                 };
             }
@@ -537,7 +548,7 @@ impl WindowsWindow {
             unsafe {
                 SetWindowPos(
                     self.hwnd.get(),
-                    0,
+                    HWND(0),
                     0,
                     0,
                     0,
@@ -583,9 +594,9 @@ impl GenericWindow for WindowsWindow {
             unsafe {
                 AdjustWindowRectEx(
                     &mut border_rect,
-                    window_info.dwStyle,
+                    WINDOW_STYLE(window_info.dwStyle),
                     false,
-                    window_info.dwExStyle,
+                    WINDOW_EX_STYLE(window_info.dwExStyle),
                 )
             };
 
@@ -630,7 +641,7 @@ impl GenericWindow for WindowsWindow {
         unsafe {
             SetWindowPos(
                 self.hwnd.get(),
-                0,
+                HWND(0),
                 *window_x,
                 *window_y,
                 *new_width,
@@ -640,7 +651,7 @@ impl GenericWindow for WindowsWindow {
                     | if self.window_mode == WindowMode::Fullscreen {
                         SWP_NOSENDCHANGING
                     } else {
-                        0
+                        SET_WINDOW_POS_FLAGS(0)
                     },
             );
         }
@@ -688,12 +699,12 @@ impl GenericWindow for WindowsWindow {
                 let window_ex_style = GetWindowLongW(self.hwnd.get(), GWL_EXSTYLE);
 
                 // This adjusts a zero rect to give us the size of the border
-                let mut border_rect: RECT = mem::zeroed();
+                let mut border_rect = RECT::default();
                 AdjustWindowRectEx(
                     &mut border_rect,
-                    window_style as u32,
+                    WINDOW_STYLE(window_style as u32),
                     false,
-                    window_ex_style as u32,
+                    WINDOW_EX_STYLE(window_ex_style as u32),
                 );
 
                 // Border rect size is negative
@@ -702,7 +713,7 @@ impl GenericWindow for WindowsWindow {
 
                 SetWindowPos(
                     self.hwnd.get(),
-                    0,
+                    HWND(0),
                     *x,
                     *y,
                     0,
@@ -725,7 +736,7 @@ impl GenericWindow for WindowsWindow {
         } else {
             let mut hwnd_insert_after = HWND_TOP;
             // By default we activate the window or it isn't actually brought to the front
-            let mut flags: u32 = SWP_NOMOVE | SWP_NOSIZE | SWP_NOOWNERZORDER;
+            let mut flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOOWNERZORDER;
 
             if !force {
                 flags |= SWP_NOACTIVATE;
@@ -813,7 +824,7 @@ impl GenericWindow for WindowsWindow {
 
             let true_fullscreen = new_window_mode == WindowMode::Fullscreen;
 
-            let mut window_style = unsafe { GetWindowLongW(self.hwnd.get(), GWL_STYLE) };
+            let mut window_style = WINDOW_STYLE(unsafe { GetWindowLongW(self.hwnd.get(), GWL_STYLE) } as u32);
             let fullscreen_mode_style = WS_POPUP;
             let mut windowed_mode_style = WS_OVERLAPPED | WS_SYSMENU | WS_CAPTION;
             if self.is_regular_window() {
@@ -843,18 +854,18 @@ impl GenericWindow for WindowsWindow {
 
                 // Setup Win32 flags for fullscreen window
                 if is_borderless_game_window && !true_fullscreen {
-                    window_style &= !fullscreen_mode_style as i32;
-                    window_style |= windowed_mode_style as i32;
+                    window_style &= !fullscreen_mode_style;
+                    window_style |= windowed_mode_style;
                 } else {
-                    window_style &= !windowed_mode_style as i32;
-                    window_style |= fullscreen_mode_style as i32;
+                    window_style &= !windowed_mode_style;
+                    window_style |= fullscreen_mode_style;
                 }
 
                 unsafe {
-                    SetWindowLongW(self.hwnd.get(), GWL_STYLE, window_style);
+                    SetWindowLongW(self.hwnd.get(), GWL_STYLE, window_style.0 as i32);
                     SetWindowPos(
                         self.hwnd.get(),
-                        0,
+                        HWND(0),
                         0,
                         0,
                         0,
@@ -919,13 +930,13 @@ impl GenericWindow for WindowsWindow {
                 // Windowed:
 
                 // Setup Win32 flags for restored window
-                window_style &= !fullscreen_mode_style as i32;
-                window_style |= windowed_mode_style as i32;
+                window_style &= !fullscreen_mode_style;
+                window_style |= windowed_mode_style;
                 unsafe {
-                    SetWindowLongW(self.hwnd.get(), GWL_STYLE, window_style);
+                    SetWindowLongW(self.hwnd.get(), GWL_STYLE, window_style.0 as i32);
                     SetWindowPos(
                         self.hwnd.get(),
-                        0,
+                        HWND(0),
                         0,
                         0,
                         0,
@@ -986,7 +997,7 @@ impl GenericWindow for WindowsWindow {
     }
     fn set_opacity(&self, opacity: f32) {
         unsafe {
-            SetLayeredWindowAttributes(self.hwnd.get(), 0, (opacity * 255.0f32) as u8, LWA_ALPHA);
+            SetLayeredWindowAttributes(self.hwnd.get(), COLORREF(0), (opacity * 255.0f32) as u8, LWA_ALPHA);
         }
     }
     fn enable(&self, enable: bool) {
@@ -1020,7 +1031,7 @@ impl GenericWindow for WindowsWindow {
         }
     }
     fn get_os_window_handle(&self) -> *const c_void {
-        self.hwnd.get() as *const c_void
+        self.hwnd.get().0 as *const c_void
     }
     fn get_window_title_bar_size(&self) -> i32 {
         unsafe { GetSystemMetrics(SM_CYCAPTION) }
@@ -1034,7 +1045,7 @@ impl GenericWindow for WindowsWindow {
     fn set_text(&self, text: &mut Vec<u16>) {
         //TODO: genericize the text variable
         unsafe {
-            SetWindowTextW(self.hwnd.get(), PWSTR(text.as_mut_ptr()));
+            SetWindowTextW(self.hwnd.get(), PCWSTR(text.as_ptr()));
         }
     }
     fn get_definition(&self) -> &Rc<WindowDefinition> {
@@ -1047,7 +1058,7 @@ impl GenericWindow for WindowsWindow {
         /* self.window_definitions.is_valid() && */
         windef_borrow.size_will_change_often {
             *size = (self.virtual_width.get(), self.virtual_height.get());
-        } else if self.hwnd.get() != 0 {
+        } else if self.hwnd.get().0 != 0 {
             unsafe {
                 let mut client_rect = RECT::default();
                 GetClientRect(self.hwnd.get(), &mut client_rect);
@@ -1109,10 +1120,10 @@ impl GenericWindow for WindowsWindow {
 }
 
 fn create_window(
-    ex_style: u32,
-    class_name: PWSTR,
-    window_name: PWSTR,
-    style: u32,
+    ex_style: WINDOW_EX_STYLE,
+    class_name: PCWSTR,
+    window_name: PCWSTR,
+    style: WINDOW_STYLE,
     x: i32,
     y: i32,
     width: i32,
@@ -1120,7 +1131,7 @@ fn create_window(
     wnd_parent: HWND,
     menu: HMENU,
     instance: HINSTANCE,
-    param: *const c_void,
+    param: Option<*const c_void>,
 ) -> io::Result<HWND> {
     match unsafe {
         CreateWindowExW(
@@ -1138,7 +1149,7 @@ fn create_window(
             param,
         )
     } {
-        v if v == 0 => Err(io::Error::last_os_error()),
+        v if v == HWND(0) => Err(io::Error::last_os_error()),
         v => Ok(v),
     }
 }
