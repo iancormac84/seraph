@@ -5,7 +5,11 @@ use crate::{
 };
 use glam::Vec2;
 use std::{
-    error::Error, fs::{self, File}, io::Write, path::Path, ptr
+    error::Error,
+    fs::{self, File},
+    io::Write,
+    path::Path,
+    ptr,
 };
 use windows::{
     core::{GUID, PCWSTR},

@@ -11,7 +11,13 @@ use crate::{
     },
 };
 use std::{
-    borrow::{Borrow, BorrowMut}, cell::{Cell, RefCell}, cmp, fmt, io, mem, os::raw::c_void, ptr, rc::Rc, sync::{Arc, Weak}
+    borrow::{Borrow, BorrowMut},
+    cell::{Cell, RefCell},
+    cmp, fmt, io, mem,
+    os::raw::c_void,
+    ptr,
+    rc::Rc,
+    sync::{Arc, Weak},
 };
 use windows::{
     core::PCWSTR,
