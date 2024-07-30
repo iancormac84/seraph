@@ -5,13 +5,10 @@ use crate::{
 };
 use glam::Vec2;
 use std::{
-    fs::{self, File},
-    io::Write,
-    path::Path,
-    ptr,
+    error::Error, fs::{self, File}, io::Write, path::Path, ptr
 };
 use windows::{
-    core::{GUID, PCWSTR, PWSTR},
+    core::{GUID, PCWSTR},
     Win32::{
         Foundation::{HINSTANCE, POINT, RECT},
         UI::WindowsAndMessaging::{
@@ -70,14 +67,14 @@ impl WindowsCursor {
                     }
                     //TODO
                     MouseCursor::GrabHand => {
-                        cursor_handle = LoadCursorFromFileW(PWSTR(r"F:\Programs\Epic Games\4.14\Engine\Content\Editor\Slate\Cursor\grabhand.cur".to_wide_null().as_mut_ptr()))?;
+                        cursor_handle = LoadCursorFromFileW(PCWSTR(r"F:\Programs\Epic Games\4.14\Engine\Content\Editor\Slate\Cursor\grabhand.cur".to_wide_null().as_ptr()))?;
                         if cursor_handle.is_invalid() {
                             // Failed to load file, fall back
                             cursor_handle = LoadCursorW(HINSTANCE(ptr::null_mut()), IDC_HAND)?;
                         }
                     }
                     MouseCursor::GrabHandClosed => {
-                        cursor_handle = LoadCursorFromFileW(PWSTR(r"F:\Programs\Epic Games\4.14\Engine\Content\Editor\Slate\Cursor\grabhand_closed.cur".to_wide_null().as_mut_ptr()))?;
+                        cursor_handle = LoadCursorFromFileW(PCWSTR(r"F:\Programs\Epic Games\4.14\Engine\Content\Editor\Slate\Cursor\grabhand_closed.cur".to_wide_null().as_ptr()))?;
                         if cursor_handle.is_invalid() {
                             // Failed to load file, fall back
                             cursor_handle = LoadCursorW(HINSTANCE(ptr::null_mut()), IDC_HAND)?;
@@ -87,7 +84,7 @@ impl WindowsCursor {
                         cursor_handle = LoadCursorW(HINSTANCE(ptr::null_mut()), IDC_NO)?;
                     }
                     MouseCursor::EyeDropper => {
-                        cursor_handle = LoadCursorFromFileW(PWSTR(r"F:\Programs\Epic Games\4.14\Engine\Content\Editor\Slate\Cursor\eyedropper.cur".to_wide_null().as_mut_ptr()))?;
+                        cursor_handle = LoadCursorFromFileW(PCWSTR(r"F:\Programs\Epic Games\4.14\Engine\Content\Editor\Slate\Cursor\eyedropper.cur".to_wide_null().as_ptr()))?;
                     }
                 }
                 cursor_handles[i] = cursor_handle;
@@ -105,12 +102,12 @@ impl WindowsCursor {
     }
 }
 
-impl ICursor for WindowsCursor {
+impl ICursor for HCURSOR {
     type Rect = RECT;
     fn create_cursor_from_file<P: AsRef<Path>>(
         path_to_cursor_without_extension: P,
-        hotspot: Vec2,
-    ) -> Result<Option<Self>> {
+        _hotspot: Vec2,
+    ) -> Result<Self, Box<dyn Error>> {
         let anicursor = path_to_cursor_without_extension
             .as_ref()
             .with_extension("ani");
@@ -130,7 +127,7 @@ impl ICursor for WindowsCursor {
         let temp_cursor_file_path = Path::new(env!("TEMP"))
             .join(format!("Cursor-{:?}", GUID::new().unwrap()))
             .with_extension("temp");
-        let mut temp_cursor_file = File::create(temp_cursor_file_path)?;
+        let mut temp_cursor_file = File::create(&temp_cursor_file_path)?;
         temp_cursor_file.write_all(&cursor_file_data)?;
 
         let cursor_handle = unsafe {
@@ -142,7 +139,8 @@ impl ICursor for WindowsCursor {
                 0,
                 LR_LOADFROMFILE,
             )
-        };
+        }?;
+        Ok(HCURSOR(cursor_handle.0))
     }
     fn is_create_cursor_from_rgba_buffer_supported() -> bool {
         true

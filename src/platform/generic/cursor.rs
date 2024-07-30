@@ -1,6 +1,6 @@
 use crate::core::math::color::Color;
 use glam::Vec2;
-use std::{ffi::c_void, path::Path};
+use std::{error::Error, ffi::c_void, path::Path};
 
 pub trait TagRect {}
 
@@ -100,7 +100,7 @@ pub trait ICursor {
     fn create_cursor_from_file<P: AsRef<Path>>(
         path_to_cursor_without_extension: P,
         hotspot: Vec2,
-    ) -> Option<Self>
+    ) -> Result<Self, Box<dyn Error>>
     where
         Self: Sized;
 

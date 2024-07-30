@@ -11,12 +11,7 @@ use crate::{
     },
 };
 use std::{
-    borrow::{Borrow, BorrowMut},
-    cell::{Cell, RefCell},
-    cmp, fmt, io, mem,
-    os::raw::c_void,
-    rc::Rc,
-    sync::{Arc, Weak},
+    borrow::{Borrow, BorrowMut}, cell::{Cell, RefCell}, cmp, fmt, io, mem, os::raw::c_void, ptr, rc::Rc, sync::{Arc, Weak}
 };
 use windows::{
     core::PCWSTR,
@@ -129,7 +124,7 @@ impl WindowsWindow {
             WindowsWindow {
                 app_window_class: APP_WINDOW_CLASS,
                 owning_application: Arc::downgrade(WINDOWS_APPLICATION.unwrap()),
-                hwnd: Cell::new(HWND(0)),
+                hwnd: Cell::new(HWND(ptr::null_mut())),
                 region_height: Cell::new(-1),
                 region_width: Cell::new(-1),
                 window_mode: WindowMode::Windowed,
@@ -285,9 +280,9 @@ impl WindowsWindow {
                 if parent.is_some() {
                     parent.unwrap().hwnd.get()
                 } else {
-                    HWND(0)
+                    HWND(ptr::null_mut())
                 },
-                HMENU(0),
+                HMENU(ptr::null_mut()),
                 instance,
                 None,
             ) {
@@ -359,7 +354,7 @@ impl WindowsWindow {
                 if application_supports_per_pixel_blending
                     && windef_borrow.transparency_support == WindowTransparency::PerPixel
                 {
-                    let mut margins = MARGINS {
+                    let margins = MARGINS {
                         cxLeftWidth: -1,
                         cxRightWidth: -1,
                         cyTopHeight: -1,
@@ -392,7 +387,7 @@ impl WindowsWindow {
                 }
                 SetWindowPos(
                     self.hwnd.get(),
-                    HWND(0),
+                    HWND(ptr::null_mut()),
                     0,
                     0,
                     0,
@@ -549,7 +544,7 @@ impl WindowsWindow {
             unsafe {
                 SetWindowPos(
                     self.hwnd.get(),
-                    HWND(0),
+                    HWND(ptr::null_mut()),
                     0,
                     0,
                     0,
@@ -595,9 +590,9 @@ impl GenericWindow for WindowsWindow {
             unsafe {
                 AdjustWindowRectEx(
                     &mut border_rect,
-                    WINDOW_STYLE(window_info.dwStyle),
+                    WINDOW_STYLE(window_info.dwStyle.0),
                     false,
-                    WINDOW_EX_STYLE(window_info.dwExStyle),
+                    WINDOW_EX_STYLE(window_info.dwExStyle.0),
                 )
             };
 
@@ -642,7 +637,7 @@ impl GenericWindow for WindowsWindow {
         unsafe {
             SetWindowPos(
                 self.hwnd.get(),
-                HWND(0),
+                HWND(ptr::null_mut()),
                 *window_x,
                 *window_y,
                 *new_width,
@@ -714,7 +709,7 @@ impl GenericWindow for WindowsWindow {
 
                 SetWindowPos(
                     self.hwnd.get(),
-                    HWND(0),
+                    HWND(ptr::null_mut()),
                     *x,
                     *y,
                     0,
@@ -867,7 +862,7 @@ impl GenericWindow for WindowsWindow {
                     SetWindowLongW(self.hwnd.get(), GWL_STYLE, window_style.0 as i32);
                     SetWindowPos(
                         self.hwnd.get(),
-                        HWND(0),
+                        HWND(ptr::null_mut()),
                         0,
                         0,
                         0,
@@ -938,7 +933,7 @@ impl GenericWindow for WindowsWindow {
                     SetWindowLongW(self.hwnd.get(), GWL_STYLE, window_style.0 as i32);
                     SetWindowPos(
                         self.hwnd.get(),
-                        HWND(0),
+                        HWND(ptr::null_mut()),
                         0,
                         0,
                         0,
@@ -976,7 +971,7 @@ impl GenericWindow for WindowsWindow {
         window_placement.length = mem::size_of::<WINDOWPLACEMENT>() as u32;
 
         let res = unsafe { GetWindowPlacement(self.hwnd.get(), &mut window_placement) };
-        if res.0 != 0 {
+        if res.is_err() {
             let restored = window_placement.rcNormalPosition;
 
             *x = restored.left;
@@ -1060,12 +1055,12 @@ impl GenericWindow for WindowsWindow {
     }
     fn adjust_cached_size(&self, size: &mut (i32, i32)) {
         let windef_borrow: &WindowDefinition = Rc::borrow(&self.window_definitions);
-        //Unreal Engine 4's check for if the FGenericWindowDefinition is valid is necessary because this is a pointer. Is it necessary in my code?
+        //Unreal Engine's check for if the FGenericWindowDefinition is valid is necessary because this is a pointer. Is it necessary in my code?
         if
         /* self.window_definitions.is_valid() && */
         windef_borrow.size_will_change_often {
             *size = (self.virtual_width.get(), self.virtual_height.get());
-        } else if self.hwnd.get().0 != 0 {
+        } else if !self.hwnd.get().is_invalid() {
             unsafe {
                 let mut client_rect = RECT::default();
                 GetClientRect(self.hwnd.get(), &mut client_rect);
