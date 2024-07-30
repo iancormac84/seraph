@@ -4,14 +4,22 @@ use crate::{
     platform::windows::utils::ToWide,
 };
 use glam::Vec2;
-use std::{path::Path, ptr};
-use windows::{core::PWSTR, Win32::Foundation::HINSTANCE};
-use windows::Win32::{
-    Foundation::{POINT, RECT},
-    UI::WindowsAndMessaging::{
-        ClipCursor, GetCursorPos, LoadCursorFromFileW, LoadCursorW, SetCursor, SetCursorPos,
-        ShowCursor, HCURSOR, IDC_ARROW, IDC_CROSS, IDC_HAND, IDC_IBEAM, IDC_NO, IDC_SIZEALL,
-        IDC_SIZENESW, IDC_SIZENS, IDC_SIZENWSE, IDC_SIZEWE,
+use std::{
+    fs::{self, File},
+    io::Write,
+    path::Path,
+    ptr,
+};
+use windows::{
+    core::{GUID, PCWSTR, PWSTR},
+    Win32::{
+        Foundation::{HINSTANCE, POINT, RECT},
+        UI::WindowsAndMessaging::{
+            ClipCursor, GetCursorPos, LoadCursorFromFileW, LoadCursorW, LoadImageW, SetCursor,
+            SetCursorPos, ShowCursor, HCURSOR, IDC_ARROW, IDC_CROSS, IDC_HAND, IDC_IBEAM, IDC_NO,
+            IDC_SIZEALL, IDC_SIZENESW, IDC_SIZENS, IDC_SIZENWSE, IDC_SIZEWE, IMAGE_CURSOR,
+            LR_LOADFROMFILE,
+        },
     },
 };
 
@@ -25,9 +33,9 @@ pub struct WindowsCursor {
 }
 
 impl WindowsCursor {
-    pub fn new() -> Result<WindowsCursor> {
+    pub fn new() -> windows::core::Result<WindowsCursor> {
         let mut cursor_handles = [HCURSOR::default(); 15];
-        let mut cursor_override_handles = [HCURSOR::default(); 15];
+        let cursor_override_handles = [HCURSOR::default(); 15];
         unsafe {
             for i in 0..15 {
                 let mut cursor_handle = HCURSOR::default();
@@ -102,8 +110,39 @@ impl ICursor for WindowsCursor {
     fn create_cursor_from_file<P: AsRef<Path>>(
         path_to_cursor_without_extension: P,
         hotspot: Vec2,
-    ) -> Option<Self> {
-        None
+    ) -> Result<Option<Self>> {
+        let anicursor = path_to_cursor_without_extension
+            .as_ref()
+            .with_extension("ani");
+        let curcursor = path_to_cursor_without_extension
+            .as_ref()
+            .with_extension("cur");
+
+        let cursor_file_data = {
+            let data = fs::read(anicursor);
+            if let Ok(data) = data {
+                data
+            } else {
+                fs::read(curcursor)?
+            }
+        };
+
+        let temp_cursor_file_path = Path::new(env!("TEMP"))
+            .join(format!("Cursor-{:?}", GUID::new().unwrap()))
+            .with_extension("temp");
+        let mut temp_cursor_file = File::create(temp_cursor_file_path)?;
+        temp_cursor_file.write_all(&cursor_file_data)?;
+
+        let cursor_handle = unsafe {
+            LoadImageW(
+                HINSTANCE(ptr::null_mut()),
+                PCWSTR(temp_cursor_file_path.to_wide_null().as_ptr()),
+                IMAGE_CURSOR,
+                0,
+                0,
+                LR_LOADFROMFILE,
+            )
+        };
     }
     fn is_create_cursor_from_rgba_buffer_supported() -> bool {
         true

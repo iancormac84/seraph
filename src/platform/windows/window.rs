@@ -40,20 +40,21 @@ use windows::{
                 EnableWindow, GetFocus, IsWindowEnabled, SetActiveWindow, SetFocus,
             },
             WindowsAndMessaging::{
-                FlashWindowEx, FLASHWINFO, FLASHW_STOP, FLASHW_TIMERNOFG, FLASHW_TRAY, WINDOW_EX_STYLE,
-    WINDOW_STYLE, SET_WINDOW_POS_FLAGS, AdjustWindowRectEx, CreateWindowExW, DestroyWindow, GetClientRect,
+                AdjustWindowRectEx, CreateWindowExW, DestroyWindow, FlashWindowEx, GetClientRect,
                 GetForegroundWindow, GetSystemMetrics, GetWindowInfo, GetWindowLongW,
                 GetWindowPlacement, GetWindowRect, IsIconic, IsWindow, IsZoomed,
                 SetLayeredWindowAttributes, SetWindowLongW, SetWindowPlacement, SetWindowPos,
-                SetWindowTextW, ShowWindow, GWL_EXSTYLE, GWL_STYLE, HMENU, HWND_TOP, HWND_TOPMOST,
-                LWA_ALPHA, MB_ICONEXCLAMATION, MB_OK, SM_CYCAPTION, SM_REMOTESESSION,
+                SetWindowTextW, ShowWindow, FLASHWINFO, FLASHW_STOP, FLASHW_TIMERNOFG, FLASHW_TRAY,
+                GWL_EXSTYLE, GWL_STYLE, HMENU, HWND_TOP, HWND_TOPMOST, LWA_ALPHA,
+                MB_ICONEXCLAMATION, MB_OK, SET_WINDOW_POS_FLAGS, SM_CYCAPTION, SM_REMOTESESSION,
                 SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOREDRAW,
                 SWP_NOSENDCHANGING, SWP_NOSIZE, SWP_NOZORDER, SW_HIDE, SW_MAXIMIZE, SW_MINIMIZE,
                 SW_RESTORE, SW_SHOW, SW_SHOWMAXIMIZED, SW_SHOWMINNOACTIVE, SW_SHOWNA,
-                SW_SHOWNOACTIVATE, WINDOWINFO, WINDOWPLACEMENT, WS_BORDER, WS_CAPTION,
-                WS_CLIPCHILDREN, WS_CLIPSIBLINGS, WS_EX_APPWINDOW, WS_EX_COMPOSITED, WS_EX_LAYERED,
-                WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_EX_WINDOWEDGE,
-                WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_OVERLAPPED, WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
+                SW_SHOWNOACTIVATE, WINDOWINFO, WINDOWPLACEMENT, WINDOW_EX_STYLE, WINDOW_STYLE,
+                WS_BORDER, WS_CAPTION, WS_CLIPCHILDREN, WS_CLIPSIBLINGS, WS_EX_APPWINDOW,
+                WS_EX_COMPOSITED, WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
+                WS_EX_TRANSPARENT, WS_EX_WINDOWEDGE, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_OVERLAPPED,
+                WS_POPUP, WS_SYSMENU, WS_THICKFRAME,
             },
         },
     },
@@ -824,7 +825,8 @@ impl GenericWindow for WindowsWindow {
 
             let true_fullscreen = new_window_mode == WindowMode::Fullscreen;
 
-            let mut window_style = WINDOW_STYLE(unsafe { GetWindowLongW(self.hwnd.get(), GWL_STYLE) } as u32);
+            let mut window_style =
+                WINDOW_STYLE(unsafe { GetWindowLongW(self.hwnd.get(), GWL_STYLE) } as u32);
             let fullscreen_mode_style = WS_POPUP;
             let mut windowed_mode_style = WS_OVERLAPPED | WS_SYSMENU | WS_CAPTION;
             if self.is_regular_window() {
@@ -997,7 +999,12 @@ impl GenericWindow for WindowsWindow {
     }
     fn set_opacity(&self, opacity: f32) {
         unsafe {
-            SetLayeredWindowAttributes(self.hwnd.get(), COLORREF(0), (opacity * 255.0f32) as u8, LWA_ALPHA);
+            SetLayeredWindowAttributes(
+                self.hwnd.get(),
+                COLORREF(0),
+                (opacity * 255.0f32) as u8,
+                LWA_ALPHA,
+            );
         }
     }
     fn enable(&self, enable: bool) {
