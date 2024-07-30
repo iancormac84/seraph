@@ -1,10 +1,10 @@
 use std::ptr;
 
 pub enum ForceFeedbackChannelType {
-    LEFT_LARGE,
-    LEFT_SMALL,
-    RIGHT_LARGE,
-    RIGHT_SMALL,
+    LeftLarge,
+    LeftSmall,
+    RightLarge,
+    RightSmall,
 }
 
 pub struct ForceFeedbackValues {
