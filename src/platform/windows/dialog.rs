@@ -49,8 +49,8 @@ pub fn message_box(
     type_: Option<u32>,
 ) -> io::Result<MessageBoxResult> {
     unsafe {
-        let wnd = wnd.unwrap_or(HWND(0));
-        let mut text = text.to_wide_null();
+        let wnd = wnd.unwrap_or(HWND(ptr::null_mut()));
+        let text = text.to_wide_null();
         let text = text.as_ptr();
         let caption = caption.map(|v| v.to_wide_null());
         let caption = caption.as_ref().map(|v| v.as_ptr()).unwrap_or(ptr::null());

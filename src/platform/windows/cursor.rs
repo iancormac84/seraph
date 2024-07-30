@@ -3,10 +3,11 @@ use crate::{
     generic::cursor::{ICursor, MouseCursor, TagRect},
     platform::windows::utils::ToWide,
 };
-use glam::Vector2;
-use std::path::Path;
+use glam::Vec2;
+use std::{path::Path, ptr};
+use windows::{core::PWSTR, Win32::Foundation::HINSTANCE};
 use windows::Win32::{
-    Foundation::{POINT, PWSTR, RECT},
+    Foundation::{POINT, RECT},
     UI::WindowsAndMessaging::{
         ClipCursor, GetCursorPos, LoadCursorFromFileW, LoadCursorW, SetCursor, SetCursorPos,
         ShowCursor, HCURSOR, IDC_ARROW, IDC_CROSS, IDC_HAND, IDC_IBEAM, IDC_NO, IDC_SIZEALL,
@@ -14,7 +15,6 @@ use windows::Win32::{
     },
 };
 
-type FloatVec2 = Vector2<f32>;
 impl TagRect for RECT {}
 
 #[derive(PartialEq, Debug)]
@@ -25,71 +25,71 @@ pub struct WindowsCursor {
 }
 
 impl WindowsCursor {
-    pub fn new() -> WindowsCursor {
-        let mut cursor_handles = [0; 15];
-        let mut cursor_override_handles = [0; 15];
+    pub fn new() -> Result<WindowsCursor> {
+        let mut cursor_handles = [HCURSOR::default(); 15];
+        let mut cursor_override_handles = [HCURSOR::default(); 15];
         unsafe {
             for i in 0..15 {
                 let mut cursor_handle = HCURSOR::default();
                 match MouseCursor::from_usize(i) {
                     MouseCursor::None | MouseCursor::Custom => {}
                     MouseCursor::Default => {
-                        cursor_handle = LoadCursorW(0, IDC_ARROW);
+                        cursor_handle = LoadCursorW(HINSTANCE(ptr::null_mut()), IDC_ARROW)?;
                     }
                     MouseCursor::TextEditBeam => {
-                        cursor_handle = LoadCursorW(0, IDC_IBEAM);
+                        cursor_handle = LoadCursorW(HINSTANCE(ptr::null_mut()), IDC_IBEAM)?;
                     }
                     MouseCursor::ResizeLeftRight => {
-                        cursor_handle = LoadCursorW(0, IDC_SIZEWE);
+                        cursor_handle = LoadCursorW(HINSTANCE(ptr::null_mut()), IDC_SIZEWE)?;
                     }
                     MouseCursor::ResizeUpDown => {
-                        cursor_handle = LoadCursorW(0, IDC_SIZENS);
+                        cursor_handle = LoadCursorW(HINSTANCE(ptr::null_mut()), IDC_SIZENS)?;
                     }
                     MouseCursor::ResizeSouthEast => {
-                        cursor_handle = LoadCursorW(0, IDC_SIZENWSE);
+                        cursor_handle = LoadCursorW(HINSTANCE(ptr::null_mut()), IDC_SIZENWSE)?;
                     }
                     MouseCursor::ResizeSouthWest => {
-                        cursor_handle = LoadCursorW(0, IDC_SIZENESW);
+                        cursor_handle = LoadCursorW(HINSTANCE(ptr::null_mut()), IDC_SIZENESW)?;
                     }
                     MouseCursor::CardinalCross => {
-                        cursor_handle = LoadCursorW(0, IDC_SIZEALL);
+                        cursor_handle = LoadCursorW(HINSTANCE(ptr::null_mut()), IDC_SIZEALL)?;
                     }
                     MouseCursor::Crosshairs => {
-                        cursor_handle = LoadCursorW(0, IDC_CROSS);
+                        cursor_handle = LoadCursorW(HINSTANCE(ptr::null_mut()), IDC_CROSS)?;
                     }
                     MouseCursor::Hand => {
-                        cursor_handle = LoadCursorW(0, IDC_HAND);
+                        cursor_handle = LoadCursorW(HINSTANCE(ptr::null_mut()), IDC_HAND)?;
                     }
                     //TODO
                     MouseCursor::GrabHand => {
-                        cursor_handle = LoadCursorFromFileW(PWSTR(r"F:\Programs\Epic Games\4.14\Engine\Content\Editor\Slate\Cursor\grabhand.cur".to_wide_null().as_mut_ptr()));
-                        if cursor_handle == 0 {
+                        cursor_handle = LoadCursorFromFileW(PWSTR(r"F:\Programs\Epic Games\4.14\Engine\Content\Editor\Slate\Cursor\grabhand.cur".to_wide_null().as_mut_ptr()))?;
+                        if cursor_handle.is_invalid() {
                             // Failed to load file, fall back
-                            cursor_handle = LoadCursorW(0, IDC_HAND);
+                            cursor_handle = LoadCursorW(HINSTANCE(ptr::null_mut()), IDC_HAND)?;
                         }
                     }
                     MouseCursor::GrabHandClosed => {
-                        cursor_handle = LoadCursorFromFileW(PWSTR(r"F:\Programs\Epic Games\4.14\Engine\Content\Editor\Slate\Cursor\grabhand_closed.cur".to_wide_null().as_mut_ptr()));
-                        if cursor_handle == 0 {
+                        cursor_handle = LoadCursorFromFileW(PWSTR(r"F:\Programs\Epic Games\4.14\Engine\Content\Editor\Slate\Cursor\grabhand_closed.cur".to_wide_null().as_mut_ptr()))?;
+                        if cursor_handle.is_invalid() {
                             // Failed to load file, fall back
-                            cursor_handle = LoadCursorW(0, IDC_HAND);
+                            cursor_handle = LoadCursorW(HINSTANCE(ptr::null_mut()), IDC_HAND)?;
                         }
                     }
                     MouseCursor::SlashedCircle => {
-                        cursor_handle = LoadCursorW(0, IDC_NO);
+                        cursor_handle = LoadCursorW(HINSTANCE(ptr::null_mut()), IDC_NO)?;
                     }
                     MouseCursor::EyeDropper => {
-                        cursor_handle = LoadCursorFromFileW(PWSTR(r"F:\Programs\Epic Games\4.14\Engine\Content\Editor\Slate\Cursor\eyedropper.cur".to_wide_null().as_mut_ptr()));
+                        cursor_handle = LoadCursorFromFileW(PWSTR(r"F:\Programs\Epic Games\4.14\Engine\Content\Editor\Slate\Cursor\eyedropper.cur".to_wide_null().as_mut_ptr()))?;
                     }
                 }
                 cursor_handles[i] = cursor_handle;
             }
         }
-        WindowsCursor {
+        Ok(WindowsCursor {
             current_type: MouseCursor::Default,
             cursor_handles,
             cursor_override_handles,
-        }
+        })
     }
     pub fn set_custom_shape(&mut self, cursor_handle: HCURSOR) {
         let mouse_cursor = MouseCursor::Custom;
@@ -101,7 +101,7 @@ impl ICursor for WindowsCursor {
     type Rect = RECT;
     fn create_cursor_from_file<P: AsRef<Path>>(
         path_to_cursor_without_extension: P,
-        hotspot: Vector2<f32>,
+        hotspot: Vec2,
     ) -> Option<Self> {
         None
     }
@@ -112,16 +112,16 @@ impl ICursor for WindowsCursor {
         pixels: Color,
         width: i32,
         height: i32,
-        hotspot: Vector2<f32>,
+        hotspot: Vec2,
     ) -> Option<Self> {
         None
     }
-    fn get_position(&self) -> FloatVec2 {
+    fn get_position(&self) -> Vec2 {
         unsafe {
             let mut cursor_pos = POINT::default();
             GetCursorPos(&mut cursor_pos);
 
-            FloatVec2::new(cursor_pos.x as f32, cursor_pos.y as f32)
+            Vec2::new(cursor_pos.x as f32, cursor_pos.y as f32)
         }
     }
     fn set_position(&mut self, x: i32, y: i32) {
@@ -132,7 +132,7 @@ impl ICursor for WindowsCursor {
     fn set_type(&mut self, new_cursor: MouseCursor) {
         self.current_type = new_cursor;
         unsafe {
-            if self.cursor_override_handles[new_cursor as usize] != 0 {
+            if !self.cursor_override_handles[new_cursor as usize].is_invalid() {
                 SetCursor(self.cursor_override_handles[new_cursor as usize]);
             } else {
                 SetCursor(self.cursor_handles[new_cursor as usize]);
@@ -158,7 +158,7 @@ impl ICursor for WindowsCursor {
             }
         }
     }
-    fn lock(&self, bounds: *const Self::Rect) {
+    fn lock(&self, bounds: Option<*const Self::Rect>) {
         unsafe {
             // Lock/Unlock the cursor
             ClipCursor(bounds);
@@ -170,7 +170,7 @@ impl ICursor for WindowsCursor {
         cursor_type: MouseCursor,
         in_cursor_handle: *const std::ffi::c_void,
     ) {
-        let cursor_handle = in_cursor_handle as HCURSOR;
+        let cursor_handle = HCURSOR(in_cursor_handle);
         self.cursor_override_handles[cursor_type as usize] = cursor_handle;
         if self.current_type == cursor_type {
             self.set_type(self.current_type);
